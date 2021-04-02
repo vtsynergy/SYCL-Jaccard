@@ -19,6 +19,9 @@
 
 #ifndef __STANDALONE_CSR_HPP__
 #define __STANDALONE_CSR_HPP__
+//Need this on the old hipSYCL compiler we're using
+#define HIPSYCL_EXT_FP_ATOMICS true
+#include <CL/sycl.hpp>
 
 //From utilities/graph_utils.cuh
 #define CUDA_MAX_BLOCKS 65535
@@ -38,13 +41,12 @@ class GraphCSRView {
   using edge_type   = edge_t;
   using weight_type = weight_t;
 
-  weight_t *edge_data;  ///< edge weight
+  cl::sycl::buffer<weight_t> edge_data;  ///< edge weight
 
   vertex_t number_of_vertices;
   edge_t number_of_edges;
-  edge_t *offsets{nullptr};    ///< CSR offsets
-
-  vertex_t *indices{nullptr};  ///< CSR indices
+  cl::sycl::buffer<edge_t> offsets{nullptr};    ///< CSR offsets
+  cl::sycl::buffer<vertex_t> indices;  ///< CSR indices
 
   /**
    * @brief      Default constructor
@@ -54,7 +56,7 @@ class GraphCSRView {
   {
   }
   GraphCSRView(weight_t *edge_data, vertex_t number_of_vertices, edge_t number_of_edges)
-    : edge_data(edge_data),
+    : edge_data(edge_data, number_of_edges),
       number_of_vertices(number_of_vertices),
       number_of_edges(number_of_edges)
   {
@@ -83,6 +85,22 @@ class GraphCSRView {
   GraphCSRView(edge_t *offsets,
                                 vertex_t *indices,
                                 weight_t *edge_data,
+                                vertex_t number_of_vertices,
+                                edge_t number_of_edges)
+    : offsets{offsets, number_of_vertices},
+      indices{indices, number_of_edges},
+      edge_data(edge_data, number_of_edges),
+      number_of_vertices(number_of_vertices),
+      number_of_edges(number_of_edges)
+  {
+  }
+
+  /**
+  * @brief Use copy constructors to re-reference existing SYCL buffers
+  */
+  GraphCSRView(cl::sycl::buffer<edge_t> &offsets,
+                                cl::sycl::buffer<vertex_t> &indices,
+                                cl::sycl::buffer<weight_t> &edge_data,
                                 vertex_t number_of_vertices,
                                 edge_t number_of_edges)
     : offsets{offsets},

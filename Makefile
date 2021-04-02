@@ -14,27 +14,34 @@
 # * limitations under the License.
 # *
 
-.PHONY: all
-all: jaccardCUDA compareCoords
+HIPSYCL_PATH=../edge2-hipSYCL
+HIPSYCL_CLANG_PATH=../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall/
+SYCL=$(HIPSYCL_PATH)/bin/syclcc
+#SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
+SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib -O3
 
-jaccardCUDA: jaccardCUDA.o readMtxToCSR.o main.o
-	nvcc -o jaccardCUDA jaccardCUDA.o readMtxToCSR.o main.o -g
+
+.PHONY: all
+all: jaccardSYCL compareCoords
+
+jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
+	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o -g
 
 main.o: main.cpp
-	nvcc -o main.o -c main.cpp -g
+	$(SYCL) $(SYCL_FLAGS) -o main.o -c main.cpp -g
 
-jaccardCUDA.o: jaccard.cu standalone_csr.hpp
-	nvcc jaccard.cu -o jaccardCUDA.o -D STANDALONE --system-include ./ -c -g
+jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
+	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -g -D STANDALONE -v
 
 readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
-	g++ -o readMtxToCSR.o -c readMtxToCSR.cpp -g 
+	$(SYCL) $(SYCL_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp -g 
 
 compareCoords: compareCoords.o readMtxToCSR.o
-	g++ -o compareCoords compareCoords.o readMtxToCSR.o -g
+	$(SYCL) $(SYCL_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o -g
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
-	g++ -o compareCoords.o -c compareCoords.cpp -g
+	$(SYCL) $(SYCL_FLAGS) -o compareCoords.o -c compareCoords.cpp -g
 
 .PHONY: clean
 clean:
-	rm jaccardCUDA *.o	
+	rm jaccardSYCL *.o	

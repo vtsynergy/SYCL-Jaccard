@@ -123,12 +123,27 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
 template <typename WT>
 std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> csr, bool isZeroIndexed) {
 std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WT>>();
-  //Just iterate over all the rows
-  for (int row = 0; row < csr.number_of_vertices; row++) {
-    for (int32_t offset = csr.offsets[row], end = csr.offsets[row+1]; offset < end; offset++) {
-      ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), csr.indices[offset] + (isZeroIndexed ? 0 : 1), csr.edge_data[offset]));
+  //TODO Is this legal to do?
+  cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
+
+  //Submit a command group so we can use a host accessor
+  cl::sycl::queue q = cl::sycl::queue(cl::sycl::cpu_selector());
+  q.submit([&](cl::sycl::handler &cgh){
+    //Host accessors to read the the CSR buffers
+    //TODO Replace these with SYCL 2020 get_host_accessor, once supported
+    auto offset_acc = csr.offsets.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(csr.number_of_vertices+1));
+    auto indices_acc = csr.indices.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(csr.number_of_vertices));
+    auto edge_acc = csr.edge_data.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(csr.number_of_edges));
+    //TODO: Rework this to support parallel construction of the output set
+    //FIXME: This probably has to actually be a task
+    //cgh.single_task<class CSRToMTX_kern>([=]
+    //Just iterate over all the rows
+    for (int row = 0; row < csr.number_of_vertices; row++) {
+      for (int32_t offset = offset_acc[row], end = offset_acc[row+1]; offset < end; offset++) {
+        ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
+      }
     }
-  }
+  });
   return ret_set;
 }
 
@@ -139,3 +154,5 @@ template GraphCSRView<int32_t, int32_t, double> * mtxSetToCSR(std::set<std::tupl
 template GraphCSRView<int32_t, int32_t, float> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, float>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
 template std::set<std::tuple<int32_t, int32_t, double>> *CSRToMtx(GraphCSRView<int32_t, int32_t, double> csr, bool isZeroIndexed = false);
 template std::set<std::tuple<int32_t, int32_t, float>> *CSRToMtx(GraphCSRView<int32_t, int32_t, float> csr, bool isZeroIndexed = false);
+template std::tuple<int32_t, int32_t, double> readCoord(std::ifstream &fileIn, bool isWeighted = true);
+template std::tuple<int32_t, int32_t, float> readCoord(std::ifstream &fileIn, bool isWeighted = true);
