@@ -1,5 +1,6 @@
 /*
  * Original CUDA Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * SYCL translation Copyright (c) 2021-2022, Virginia Tech
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +19,7 @@
 /** ---------------------------------------------------------------------------*
  * @brief The cugraph Jaccard core functionality
  *
- * @file jaccard.cu
+ * @file jaccard.cpp
  * ---------------------------------------------------------------------------**/
 
 #ifndef STANDALONE
