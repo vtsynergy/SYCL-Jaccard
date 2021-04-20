@@ -127,8 +127,8 @@ std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<i
   //cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
 
   //Submit a command group so we can use a host accessor
-  cl::sycl::queue q = cl::sycl::queue(cl::sycl::cpu_selector());
-  q.submit([&](cl::sycl::handler &cgh){
+  //cl::sycl::queue q = cl::sycl::queue(cl::sycl::cpu_selector());
+  //q.submit([&](cl::sycl::handler &cgh){
     //Host accessors to read the the CSR buffers
     //TODO Replace these with SYCL 2020 get_host_accessor, once supported
     auto offset_acc = csr.offsets.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(csr.number_of_vertices+1));
@@ -143,7 +143,7 @@ std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<i
         ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
       }
     }
-  });
+  //});
   return ret_set;
 }
 

@@ -31,6 +31,22 @@
 #include <iostream>
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"
+
+#ifdef SYCL_1_2_1
+#define group_barrier(foo) tid_info.barrier()
+//#define group_barrier(foo) tid_info.barrier(cl::sycl::access::fence_space::local_space)
+#endif
+
+#ifndef SYCL_DEVICE_ONLY
+#define EMULATE_ATOMIC_ADD_FLOAT
+#define EMULATE_ATOMIC_ADD_DOUBLE
+#endif
+
+#ifdef ICX
+#define min(a, b) std::min((size_t)a, (size_t)b)
+#define EMULATE_ATOMIC_ADD_DOUBLE
+#endif
+
 //From RAFT at commit 048063dc08
 constexpr inline int warp_size() { return 32; }
 
@@ -159,12 +175,11 @@ void fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q)
   //FIXME: Add SYCL asynchronous error check, but no need to flush the queue here
 }
 
-#ifndef SYCL_DEVICE_ONLY
+#ifdef EMULATE_ATOMIC_ADD_FLOAT
 //Inspired by the older CUDA C Programming Guide
-float myAtomicAdd(cl::sycl::atomic<float> &address, float val)
+float myAtomicAdd(cl::sycl::atomic<uint32_t> &address, float val)
 {
-    cl::sycl::atomic<uint32_t> dummy = reinterpret_cast<cl::sycl::atomic<uint32_t>&>(address);
-    uint32_t old = dummy.load();
+    uint32_t old = address.load();
     //uint64_t atomic_load
     bool success = false;
     do {
@@ -174,18 +189,19 @@ float myAtomicAdd(cl::sycl::atomic<float> &address, float val)
         //success = address.compare_exchange_strong(old, reintpret_cast<uint64_t>(val+reinterpret_cast<double>(old)));
         float temp = val + *reinterpret_cast<float*>(&old);
         //success = dummy.compare_exchange_strong(const_cast<uint64_t&>(old), *reinterpret_cast<uint64_t*>(&temp));
-        success = dummy.compare_exchange_strong(old, *reinterpret_cast<uint32_t*>(&temp));
+        success = address.compare_exchange_strong(old, *reinterpret_cast<uint32_t*>(&temp));
 
     // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
     } while (!success);
 
     return *reinterpret_cast<float*>(&old);
 }
+#endif //EMULATE_ATOMIC_ADD_FLOAT
+#ifdef EMULATE_ATOMIC_ADD_DOUBLE
 //Inspired by the older CUDA C Programming Guide
-double myAtomicAdd(cl::sycl::atomic<double> &address, double val)
+double myAtomicAdd(cl::sycl::atomic<uint64_t> &address, double val)
 {
-    cl::sycl::atomic<uint64_t> dummy = reinterpret_cast<cl::sycl::atomic<uint64_t>&>(address);
-    uint64_t old = dummy.load();
+    uint64_t old = address.load();
     //uint64_t atomic_load
     bool success = false;
     do {
@@ -195,14 +211,14 @@ double myAtomicAdd(cl::sycl::atomic<double> &address, double val)
         //success = address.compare_exchange_strong(old, reintpret_cast<uint64_t>(val+reinterpret_cast<double>(old)));
         double temp = val + *reinterpret_cast<double*>(&old);
         //success = dummy.compare_exchange_strong(const_cast<uint64_t&>(old), *reinterpret_cast<uint64_t*>(&temp));
-        success = dummy.compare_exchange_strong(old, *reinterpret_cast<uint64_t*>(&temp));
+        success = address.compare_exchange_strong(old, *reinterpret_cast<uint64_t*>(&temp));
 
     // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
     } while (!success);
 
     return *reinterpret_cast<double*>(&old);
 }
-#endif //!SYCL_DEVICE_ONLY
+#endif //EMULATE_ATOMIC_ADD_DOUBLE
 
 #endif //STANDALONE
 
@@ -353,12 +369,26 @@ public:
           // if the element with the same column index in the reference row has been found
           if (match != -1) {
 //FIXME: Update to SYCL 2020 atomic_refs
-            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
-#ifdef SYCL_DEVICE_ONLY
-            atom_weight.fetch_add(ref_val);
+            if constexpr (std::is_same<weight_t, double>::value) {
+            //if constexpr (typeid(weight_t) == typeid(double)) {
+#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+              cl::sycl::atomic<uint64_t> atom_weight{cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
+              myAtomicAdd(atom_weight, ref_val);
 #else
-            myAtomicAdd(atom_weight, ref_val);
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
+              atom_weight.fetch_add(ref_val);
 #endif
+            }
+            //if constexpr (typeid(weight_t) == typeid(float)) {
+            if constexpr (std::is_same<weight_t, float>::value) {
+#ifdef EMULATE_ATOMIC_ADD_FLOAT
+              cl::sycl::atomic<uint32_t> atom_weight{cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
+              myAtomicAdd(atom_weight, ref_val);
+#else
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
+              atom_weight.fetch_add(ref_val);
+#endif
+            }
             //FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating atomics
             //atomicAdd(&weight_i[j], ref_val);
           }
@@ -456,18 +486,31 @@ public:
         }
 
         // if the element with the same column index in the reference row has been found
-        if (match != -1) {
+          if (match != -1) {
 //FIXME: Update to SYCL 2020 atomic_refs
-          cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
-#ifdef SYCL_DEVICE_ONLY
-            atom_weight.fetch_add(ref_val);
+            if constexpr (std::is_same<weight_t, double>::value) {
+            //if constexpr (typeid(weight_t) == typeid(double)) {
+#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+              cl::sycl::atomic<uint64_t> atom_weight{cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[i]}};
+              myAtomicAdd(atom_weight, ref_val);
 #else
-            myAtomicAdd(atom_weight, ref_val);
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
+              atom_weight.fetch_add(ref_val);
 #endif
-          //FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating atomics
-          //atom_weight.fetch_add(ref_val);
-          //atomicAdd(&weight_i[j], ref_val);
-        }
+            }
+            //if constexpr (typeid(weight_t) == typeid(float)) {
+            if constexpr (std::is_same<weight_t, float>::value) {
+#ifdef EMULATE_ATOMIC_ADD_FLOAT
+              cl::sycl::atomic<uint32_t> atom_weight{cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[i]}};
+              myAtomicAdd(atom_weight, ref_val);
+#else
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
+              atom_weight.fetch_add(ref_val);
+#endif
+            }
+            //FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating atomics
+            //atomicAdd(&weight_i[j], ref_val);
+          }
       }
     }
   }
@@ -513,7 +556,6 @@ int jaccard(vertex_t n,
             cl::sycl::buffer<weight_t> &weight_s,
             cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
-  dim3 nthreads, nblocks;
   //Needs to be 1 for barriers in warp intrinsic emulation
   size_t y = 1;
 
@@ -543,23 +585,23 @@ int jaccard(vertex_t n,
 #ifdef DEBUG  
   cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
   std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
-  debug.submit([&](cl::sycl::handler &cgh){
+{//  debug.submit([&](cl::sycl::handler &cgh){
     auto debug_acc = work.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
     for (int i = 0; i < n; i++) {
   //    std::cout << debug_acc[i] << std::endl;
     }
-  });
+}//  });
 #endif //DEBUG
   fill(e, weight_i, weight_t{0.0}, q);
 #ifdef DEBUG  
   q.wait();
   std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
-  debug.submit([&](cl::sycl::handler &cgh){
+{//  debug.submit([&](cl::sycl::handler &cgh){
     auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
     for (int i = 0; i < e; i++) {
     //  std::cout << debug_acc[i] << std::endl;
     }
-  });
+}//  });
 #endif //DEBUG
 
   //Back to previous value since this doesn't require barriers
@@ -591,13 +633,13 @@ int jaccard(vertex_t n,
 #ifdef DEBUG  
   q.wait();
   std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements" << std::endl;
-  debug.submit([&](cl::sycl::handler &cgh){
+{//  debug.submit([&](cl::sycl::handler &cgh){
     auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
     auto debug2_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
     for (int i = 0; i < e; i++) {
     //  std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
     }
-  });
+}//  });
 #endif //DEBUG
 
   // setup launch configuration
@@ -632,7 +674,6 @@ int jaccard_pairs(vertex_t n,
                   cl::sycl::buffer<weight_t> &weight_s,
                   cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
-  dim3 nthreads, nblocks;
   //Needs to be 1 for barriers in warp intrinsic emulation
   size_t y = 1;
 
