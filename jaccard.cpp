@@ -160,18 +160,19 @@ public:
 };
 
 template <typename T>
-void fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q)
+cl::sycl::event fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q)
 {
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
   size_t block = min(n, (size_t)CUDA_MAX_KERNEL_THREADS);
   size_t grid = min((n/block)+((n%block)?1:0), (size_t)CUDA_MAX_BLOCKS); 
   //TODO, do we need to emulate their stream behavior?
-  q.submit([&](cl::sycl::handler &cgh) {
+  cl::sycl::event ret_event = q.submit([&](cl::sycl::handler &cgh) {
     cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> x_acc = x.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>(n));
     FillKernel fill_kern(x_acc, value, n);
     cgh.parallel_for(cl::sycl::nd_range<1>{cl::sycl::range<1>{grid*block}, cl::sycl::range<1>{block}}, fill_kern);
   });
 
+  return ret_event;
   //FIXME: Add SYCL asynchronous error check, but no need to flush the queue here
 }
 
@@ -565,7 +566,7 @@ int jaccard(vertex_t n,
   cl::sycl::range<2> sum_global{min((n + sum_local.get(0) -1) / sum_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
 
   // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
+  cl::sycl::event sum_event = q.submit([&](cl::sycl::handler &cgh) {
     cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
     cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
@@ -592,7 +593,7 @@ int jaccard(vertex_t n,
     }
 }//  });
 #endif //DEBUG
-  fill(e, weight_i, weight_t{0.0}, q);
+  cl::sycl::event fill_event = fill(e, weight_i, weight_t{0.0}, q);
 #ifdef DEBUG  
   q.wait();
   std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
@@ -614,7 +615,7 @@ int jaccard(vertex_t n,
   cl::sycl::range<3> is_global{min((n + is_local.get(0) - 1) / is_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
 
   // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
+  cl::sycl::event is_event = q.submit([&](cl::sycl::handler &cgh) {
     cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
     cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
@@ -647,7 +648,7 @@ int jaccard(vertex_t n,
   cl::sycl::range<1> jw_global{min((e + jw_local.get(0) - 1) / jw_local.get(0), edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
 
   // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
+  cl::sycl::event jw_event = q.submit([&](cl::sycl::handler &cgh) {
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
@@ -658,6 +659,23 @@ int jaccard(vertex_t n,
 #ifdef DEBUG
   q.wait();
 #endif //DEBUG
+
+#ifdef EVENT_PROFILE
+#define wait_and_print(prefix, name) { \
+  prefix##_event.wait(); \
+  auto end = prefix##_event.get_profiling_info<cl::sycl::info::event_profiling::command_end>(); \
+  auto start = prefix##_event.get_profiling_info<cl::sycl::info::event_profiling::command_start>(); \
+  std::cerr << name << " kernel elapsed time: " << (end-start) << " (ns)" << std::endl; \
+  }
+  wait_and_print(sum, "RowSum")
+  wait_and_print(fill, "Fill")
+  wait_and_print(is, "Intersection")
+  wait_and_print(jw, "JaccardWeight")
+//  sum_event.wait();
+//  auto sum_end = sum_event.get_profiling_info<cl::sycl::info::event_profiling::command_end>();
+//  auto sum_start = sum_event.get_profiling_info<cl::sycl::info::event_profiling::command_start>();
+//  std::cerr << "RowSum kernel elapsed time: " << (sum_end-start
+#endif //EVENT_PROFILE
   return 0;
 }
 
