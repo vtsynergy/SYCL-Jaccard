@@ -23,8 +23,8 @@
 #include </opt/rocm/rocprofiler/include/rocprofiler.h>
 #endif
 
-#ifndef WT
-#define WT double
+#ifndef WEIGHT_TYPE
+#define WEIGHT_TYPE double
 #endif
 
 
@@ -34,7 +34,7 @@ int main(int argc, char * argv[]) {
   //TODO arg bounds safety
   std::ifstream fileIn(argv[1]);
   bool isWeighted;
-  std::set<std::tuple<int32_t, int32_t, WT>>* mtx_graph = readMtx<WT>(fileIn, &isWeighted);
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = readMtx<WEIGHT_TYPE>(fileIn, &isWeighted);
   fileIn.close();
 
   //Go ahead and iterate over the SYCL devices and pick one if they've specified a device number
@@ -62,23 +62,23 @@ int main(int argc, char * argv[]) {
 
   //Convert it to a CSR
   //FIXME this should read directly to buffers with writeback pointers
-  GraphCSRView<int32_t, int32_t, WT> * graph = mtxSetToCSR(*mtx_graph);
+  GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph = mtxSetToCSR(*mtx_graph);
 
   //Run the CPU implementation
   //TODO
 
   //Run the GPU implementation
   //Results buffer
-  WT * gpu_results;
-  gpu_results = (WT*)malloc(sizeof(WT*)*(graph->number_of_edges));
+  WEIGHT_TYPE * gpu_results;
+  gpu_results = (WEIGHT_TYPE*)malloc(sizeof(WEIGHT_TYPE*)*(graph->number_of_edges));
   //Pre-declare our results MTX set, since we'll need it after the device buffer scope
-  std::set<std::tuple<int32_t, int32_t, WT>> * gpu_results_mtx;
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx;
   { //Results buffer scope, for implicit copyback
-    cl::sycl::buffer<WT> results_buf(gpu_results, (graph->number_of_edges));
-    sygraph::jaccard<int32_t, int32_t, double>(*graph, graph->edge_data, results_buf, q);
+    cl::sycl::buffer<WEIGHT_TYPE> results_buf(gpu_results, (graph->number_of_edges));
+    sygraph::jaccard<int32_t, int32_t, WEIGHT_TYPE>(*graph, graph->edge_data, results_buf, q);
   
     //Create a new results graph view, using the a copy constructor to re-reference the results buffer
-    GraphCSRView<int32_t, int32_t, WT> gpu_graph_results(graph->offsets, graph->indices, results_buf, graph->number_of_vertices, graph->number_of_edges);
+    GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> gpu_graph_results(graph->offsets, graph->indices, results_buf, graph->number_of_vertices, graph->number_of_edges);
 
     //Optionally explicit copy-back before the MTX conversion uses the data on the host
     #ifdef EXPLICIT_COPY
@@ -90,9 +90,9 @@ int main(int argc, char * argv[]) {
     #endif
 
     //convert back to MTX (implicit copyback if not done explicitly)
-    gpu_results_mtx = CSRToMtx<WT>(gpu_graph_results, true);
+    gpu_results_mtx = CSRToMtx<WEIGHT_TYPE>(gpu_graph_results, true);
   } //End Results buffer scope
-  for (std::tuple<int32_t, int32_t, WT> edge : *gpu_results_mtx) {
+  for (std::tuple<int32_t, int32_t, WEIGHT_TYPE> edge : *gpu_results_mtx) {
     std::cout << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
   } 
 }
