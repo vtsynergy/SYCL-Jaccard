@@ -36,16 +36,26 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL=$(ONEAPI_PATH)/bin/icx
   SYCL_C_FLAGS = -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX
   SYCL_LD_FLAGS = -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
+  ifeq ($(FPGA), INTEL)
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga
+  DEPS := $(DEPS) jaccard_fpga.hardware
+  endif
+  ifeq ($(FPGA), INTEL_EMU)
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga
+  endif
 endif
 
 .PHONY: all
 all: jaccardSYCL compareCoords
 
-jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o
+jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o $(DEPS)
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(DEPS)
 
 main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
+
+jaccard_fpga.hardware: jaccard.cpp standalone_csr.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -Xshardware -fsycl-link=image jaccard.cpp -o jaccard_fpga.hardware -D STANDALONE
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
