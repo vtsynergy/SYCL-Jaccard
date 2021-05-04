@@ -234,7 +234,7 @@ class Jaccard_RowSumKernel
   cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
   //FIXME, with std::conditional_t we should be able to simplify out some of the code paths in the other weight-branching kernels
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>, std::nullptr_t> v;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>, cl::sycl::device_ptr<std::nullptr_t>> v;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp;
 public:
@@ -288,7 +288,7 @@ class Jaccard_IsKernel
   cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
   //FIXME, what to do if this isn't present?
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , std::nullptr_t> v;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , cl::sycl::device_ptr<std::nullptr_t>> v;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
@@ -410,7 +410,7 @@ class Jaccard_IsPairsKernel
   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair;
   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair;
   //FIXME, what to do if this isn't present?
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , std::nullptr_t> v;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , cl::sycl::device_ptr<std::nullptr_t>> v;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
