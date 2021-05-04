@@ -54,7 +54,11 @@ int main(int argc, char * argv[]) {
         all_devices.push_back(dev);
         std::cerr << "SYCL Device [" << count << "]: " << dev.get_info<cl::sycl::info::device::name>() << std::endl;
         if (count == atoi(argv[3])) {
-          q = cl::sycl::queue(dev, cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()});
+#ifdef EVENT_PROFILE
+          q = cl::sycl::queue{dev, cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()}};
+#else
+          q = cl::sycl::queue{dev};
+#endif
         }
         ++count;
       }

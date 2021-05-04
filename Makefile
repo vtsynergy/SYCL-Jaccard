@@ -22,8 +22,9 @@ endif
 ifeq ($(COMPILER), HIPSYCL)
   HIPSYCL_PATH=`pwd`/../edge2-hipSYCL
   HIPSYCL_CLANG_PATH=`pwd`/../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall
-  ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
-  ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
+#  ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
+#  ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
+  ROCPROFILER_LIB=-lrocprofiler64
   SYCL=$(HIPSYCL_PATH)/bin/syclcc
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
   SYCL_C_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D ROCPROFILE
