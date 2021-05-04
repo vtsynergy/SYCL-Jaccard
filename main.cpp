@@ -33,6 +33,7 @@ int main(int argc, char * argv[]) {
   //Open the specified file for reading
   //TODO arg bounds safety
   std::ifstream fileIn(argv[1]);
+  std::ofstream fileOut(argv[2]);
   bool isWeighted;
   std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = readMtx<WEIGHT_TYPE>(fileIn, &isWeighted);
   fileIn.close();
@@ -44,7 +45,7 @@ int main(int argc, char * argv[]) {
   cl::sycl::queue q;
 #endif
   std::vector<cl::sycl::device> all_devices;
-  if (argc >= 3) {
+  if (argc >= 4) {
     int count = 0;
     std::vector<cl::sycl::platform> plats = cl::sycl::platform::get_platforms();
     for (cl::sycl::platform plat : plats) {
@@ -52,7 +53,7 @@ int main(int argc, char * argv[]) {
       for (cl::sycl::device dev : devs) {
         all_devices.push_back(dev);
         std::cerr << "SYCL Device [" << count << "]: " << dev.get_info<cl::sycl::info::device::name>() << std::endl;
-        if (count == atoi(argv[2])) {
+        if (count == atoi(argv[3])) {
           q = cl::sycl::queue(dev, cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()});
         }
         ++count;
@@ -93,6 +94,7 @@ int main(int argc, char * argv[]) {
     gpu_results_mtx = CSRToMtx<WEIGHT_TYPE>(gpu_graph_results, true);
   } //End Results buffer scope
   for (std::tuple<int32_t, int32_t, WEIGHT_TYPE> edge : *gpu_results_mtx) {
-    std::cout << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+    fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
   } 
+  fileOut.close();
 }
