@@ -27,15 +27,15 @@ ifeq ($(COMPILER), HIPSYCL)
   ROCPROFILER_LIB=-lrocprofiler64
   SYCL=$(HIPSYCL_PATH)/bin/syclcc
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-  SYCL_C_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D ROCPROFILE
-  SYCL_LD_FLAGS=--hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LIB)
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D ROCPROFILE
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LIB)
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
 #  LD_LIBRARY_PATH:=$(ONEAPI_PATH)/compiler/lib/intel64_lin:$(LD_LIBRARY_PATH)
   SYCL=$(ONEAPI_PATH)/bin/icx
-  SYCL_C_FLAGS = -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX
-  SYCL_LD_FLAGS = -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware
   JACCARD_REUSE=-reuse-exe=jaccardSYCL
