@@ -24,7 +24,7 @@
 #endif
 
 #ifndef WEIGHT_TYPE
- #ifndef DISABLE_DP
+ #ifndef DISABLE_DP_WEIGHT
   #define WEIGHT_TYPE double
  #else
   #define WEIGHT_TYPE float

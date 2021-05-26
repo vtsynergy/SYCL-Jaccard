@@ -37,12 +37,14 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL_C_FLAGS = -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX
   SYCL_LD_FLAGS = -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -fsycl-link=image -reuse-exe=jaccardSYCL
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -fsycl-link=image -DDISABLE_DP
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware
+  JACCARD_REUSE=-reuse-exe=jaccardSYCL
+  COMPARE_REUSE=-reuse-exe=compareCoords
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_UNWEIGHTED -DDISABLE_DP_INDEX
   endif
   ifeq ($(FPGA), INTEL_EMU)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -DDISABLE_DP
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_UNWEIGHTED -DDISABLE_DP_INDEX
   endif
 endif
 
@@ -50,7 +52,7 @@ endif
 all: jaccardSYCL compareCoords
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE)
 
 main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
@@ -62,7 +64,7 @@ readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
 
 compareCoords: compareCoords.o readMtxToCSR.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o
+	$(SYCL) $(SYCL_LD_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o compareCoords.o -c compareCoords.cpp

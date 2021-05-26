@@ -863,13 +863,20 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
 template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                cl::sycl::buffer<float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                cl::sycl::buffer<float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#ifndef DISABLE_UNWEIGHTED
 template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#endif //DISABLE_UNWEIGHTED
+#ifndef DISABLE_LIST
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     cl::sycl::buffer<float> &,
                                                     int32_t,
@@ -877,6 +884,7 @@ template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<float> &,
                                                      cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     cl::sycl::buffer<float> &,
                                                     int64_t,
@@ -884,29 +892,42 @@ template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<float> &,
                                                      cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#ifndef DISABLE_UNWEIGHTED
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     int32_t,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<float> &,
                                                      cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     int64_t,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<float> &,
                                                     cl::sycl::queue &q);
-#ifndef DISABLE_DP
+#endif //DISABLE_DP_INDEX
+#endif //DISABLE_UNWEIGHTED
+#endif //DISABLE_LIST
+#ifndef DISABLE_DP_WEIGHT
 template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                 cl::sycl::buffer<double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                 cl::sycl::buffer<double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#ifndef DISABLE_UNWEIGHTED
 template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#endif //DISABLE_UNWEIGHTED
+#ifndef DISABLE_LIST
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      cl::sycl::buffer<double> &,
                                                      int32_t,
@@ -914,6 +935,7 @@ template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      cl::sycl::buffer<double> &,
                                                      int64_t,
@@ -921,17 +943,23 @@ template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
+#endif //DISABLE_DP_INDEX
+#ifndef DISABLE_UNWEIGHTED
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      int32_t,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
+#ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      int64_t,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
-#endif //DISABLE_DP
+#endif //DISABLE_DP_INDEX
+#endif //DISABLE_UNWEIGHTED
+#endif //DISABLE_LIST
+#endif //DISABLE_DP_WEIGHT
 }  // namespace sygraph
