@@ -16,6 +16,8 @@
 
 ifeq ($(DEBUG), 1)
   OPTS=-g -DDEBUG -O0
+else ifeq ($(DEBUG), 2)
+  OPTS=-g -DDEBUG -O0 -DDEBUG_2
 else
   OPTS=-O3
 endif

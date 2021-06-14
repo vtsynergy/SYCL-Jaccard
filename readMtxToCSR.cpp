@@ -81,11 +81,15 @@ std::set<std::tuple<int32_t, int32_t, WT>>* readMtx(std::ifstream &fileIn, bool 
   do {
     std::tuple<int32_t, int32_t, WT> line = readCoord<WT>(fileIn, *hasWeights);
     if (!(fileIn.bad() || fileIn.fail() || fileIn.eof())) {
-//      std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " " << std::get<2>(line) << std::endl;
+#ifdef DEBUG_2
+      std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " " << std::get<2>(line) << std::endl;
+#endif //DEBUG_2
       ret_edges->insert(line);
       if (!isDirected) {
       //Add a reverse edge
-      //std::cout << "Adding reverse edge: " << std::get<1>(line) << " " << std::get<0>(line) << " " << std::get<2>(line) << std::endl;
+#ifdef DEBUG_2
+      std::cout << "Adding reverse edge: " << std::get<1>(line) << " " << std::get<0>(line) << " " << std::get<2>(line) << std::endl;
+#endif //DEBUG_2
       ret_edges->insert(std::tuple<int32_t, int32_t, WT>(std::get<1>(line), std::get<0>(line), std::get<2>(line)));
       }
     }
@@ -106,6 +110,10 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
     int32_t source = std::get<0>(edge) - (isZeroIndexed ? 0 : 1);
     int32_t destination = std::get<1>(edge) - (isZeroIndexed ? 0 : 1);
     WT weight = std::get<2>(edge);
+#ifdef DEBUG_2
+    std::cout << "CSR conversion of edge: " << source << " " << destination << " " << weight << std::endl;
+    std::cout << "Previous source: " << prev_src << std::endl;
+#endif //DEBUG_2
     while (source != prev_src) { // Needs to be a loop to skip empty rows and dropped self-only verts
       row_bounds->push_back(weights->size()); //Close the previous row's bounds
       ++prev_src;// = source;
@@ -116,6 +124,24 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
     }
   }
   row_bounds->push_back(weights->size()); //Close the final row's bounds
+#ifdef DEBUG_2
+  std::cout << "Final CSR" << std::endl;
+  std::cout << "RowBounds ";
+  for (auto row : *row_bounds) {
+    std::cout << row << ", ";
+  }
+  std::cout << std::endl;
+  std::cout << "Column ";
+  for (auto col : *columns) {
+    std::cout << col << ", ";
+  }
+  std::cout << std::endl;
+  std::cout << "Weights ";
+  for (auto weight : *weights) {
+    std::cout << weight << ", ";
+  }
+  std::cout << std::endl;
+#endif //DEBUG_2
   //The GraphCSRView *does not* maintain it's own copy, just pointers, so they must be dynamically allocated
   return new GraphCSRView<int32_t, int32_t, WT>(row_bounds->data(), columns->data(), weights->data(), row_bounds->size()-1, weights->size());
 }
