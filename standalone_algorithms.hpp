@@ -22,6 +22,10 @@
 #ifndef __STANDALONE_ALGORITHMS_HPP__
 #define __STANDALONE_ALGORITHMS_HPP__
 
+#ifndef SYCL_EXTERNAL
+#define SYCL_EXTERNAL
+#endif
+
 #ifdef EVENT_PROFILE
 #define wait_and_print(prefix, name) { \
   prefix##_event.wait(); \

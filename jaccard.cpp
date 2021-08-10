@@ -21,7 +21,6 @@
  *
  * @file jaccard.cpp
  * ---------------------------------------------------------------------------**/
-
 #ifndef STANDALONE
 #include <rmm/thrust_rmm_allocator.h>
 #include <utilities/error.hpp>
@@ -41,6 +40,7 @@
 #define EMULATE_ATOMIC_ADD_FLOAT
 #define EMULATE_ATOMIC_ADD_DOUBLE
 #endif
+
 
 #ifdef ICX
 #define min(a, b) std::min((size_t)a, (size_t)b)
