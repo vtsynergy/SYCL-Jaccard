@@ -228,61 +228,28 @@ namespace detail {
 
 // Volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_RowSumKernel
-{
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
-  //FIXME, with std::conditional_t we should be able to simplify out some of the code paths in the other weight-branching kernels
-  #ifdef NEEDS_NULL_DEVICE_PTR
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>, cl::sycl::device_ptr<std::nullptr_t>> v;
-  #else
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>, std::nullptr_t> v;
-  #endif
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp;
-public:
-  Jaccard_RowSumKernel<true>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp)
-  : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, shfl_temp{shfl_temp}
-  {
-  }
-  //When not using weights, we don't care about v
-  Jaccard_RowSumKernel<false>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp)
-  : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp}
-  {
-  }
-  const void operator()(cl::sycl::nd_item<2> tid_info) const {
-    vertex_t row;
-    edge_t start, end, length;
-    weight_t sum;
+const void Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<2> tid_info) const {
+  vertex_t row;
+  edge_t start, end, length;
+  weight_t sum;
   
-    vertex_t row_start = tid_info.get_global_id(0);
-    vertex_t row_incr = tid_info.get_global_range(0);
-    for (row = row_start; row < n; row += row_incr) {
-      start  = csrPtr[row];
-      end    = csrPtr[row + 1];
-      length = end - start;
+  vertex_t row_start = tid_info.get_global_id(0);
+  vertex_t row_incr = tid_info.get_global_range(0);
+  for (row = row_start; row < n; row += row_incr) {
+    start  = csrPtr[row];
+    end    = csrPtr[row + 1];
+    length = end - start;
   
-      // compute row sums
-      //Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
-      if constexpr (weighted) {
-        sum = parallel_prefix_sum(tid_info, length, csrInd, start, v, shfl_temp);
-        if (tid_info.get_local_id(1) == 0) work[row] = sum;
-      } else {
-        work[row] = static_cast<weight_t>(length);
-      }
+    // compute row sums
+    //Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
+    if constexpr (weighted) {
+      sum = parallel_prefix_sum(tid_info, length, csrInd, start, v, shfl_temp);
+      if (tid_info.get_local_id(1) == 0) work[row] = sum;
+    } else {
+      work[row] = static_cast<weight_t>(length);
     }
   }
-};
+}
 
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
@@ -679,12 +646,6 @@ int jaccard(vertex_t n,
 #endif //DEBUG_2
 
 #ifdef EVENT_PROFILE
-#define wait_and_print(prefix, name) { \
-  prefix##_event.wait(); \
-  auto end = prefix##_event.get_profiling_info<cl::sycl::info::event_profiling::command_end>(); \
-  auto start = prefix##_event.get_profiling_info<cl::sycl::info::event_profiling::command_start>(); \
-  std::cerr << name << " kernel elapsed time: " << (end-start) << " (ns)" << std::endl; \
-  }
   wait_and_print(sum, "RowSum")
   wait_and_print(fill, "Fill")
   wait_and_print(is, "Intersection")
