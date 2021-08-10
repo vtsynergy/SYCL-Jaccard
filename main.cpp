@@ -45,6 +45,16 @@ int main(int argc, char * argv[]) {
   bool isWeighted;
   std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = readMtx<WEIGHT_TYPE>(fileIn, &isWeighted);
   fileIn.close();
+  //We can't override weighting until here, or else the MTX will get confused about tokens per line if the file and override disagree on the presence of weight values.
+  //Undef=defer to file, 1=Weighted, 0=Unweighted
+  char * weighted_override = std::getenv("JACCARD_FORCE_WEIGHTS");
+  if (weighted_override != NULL) {
+    #ifdef DEBUG
+      std::cerr << "Force Override of Weighted computation, current value is: " << isWeighted << " Override set to: " << weighted_override << std::endl;
+    #endif
+    if (std::strcmp(weighted_override, "1") == 0) isWeighted = true;
+    if (std::strcmp(weighted_override, "0") == 0) isWeighted = false;
+  }
 
   //Go ahead and iterate over the SYCL devices and pick one if they've specified a device number
 #ifdef EVENT_PROFILE
