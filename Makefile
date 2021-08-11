@@ -27,9 +27,9 @@ ifeq ($(COMPILER), HIPSYCL)
 #  ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
 #  ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
   ROCPROFILER_LIB=-lrocprofiler64
-  SYCL=$(HIPSYCL_PATH)/bin/syclcc
+  SYCL=$(HIPSYCL_PATH)/bin/syclcc -isystem /nfs-opt/rocm-3.8.0/include --rocm-device-lib-path=/nfs-opt/rocm-3.8.0/lib
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D ROCPROFILE
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL -D ROCPROFILE
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LIB)
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit

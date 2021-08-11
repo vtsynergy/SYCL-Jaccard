@@ -106,7 +106,7 @@ int main(int argc, char * argv[]) {
       cl::sycl::event presum_event = q.submit([&](cl::sycl::handler &cgh){
         cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::discard_write> presumInd_acc = presumInd.get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
         cgh.parallel_for<class presumInd_kernel>(cl::sycl::range<1>{(size_t)graph->number_of_edges}, [=](cl::sycl::id<1> tid) {
-          presumInd_acc[tid]=tid;
+          presumInd_acc[tid]=tid.get(0);
         });
       });
 #ifdef DEBUG_2
