@@ -23,10 +23,6 @@
 #include </opt/rocm/rocprofiler/include/rocprofiler.h>
 #endif
 
-#ifdef ICX
-#define min(a, b) std::min((size_t)a, (size_t)b)
-#endif
-
 #ifndef WEIGHT_TYPE
  #ifndef DISABLE_DP_WEIGHT
   #define WEIGHT_TYPE double

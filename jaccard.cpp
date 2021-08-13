@@ -37,7 +37,6 @@
 #endif
 
 #ifdef ICX
-#define min(a, b) std::min((size_t)a, (size_t)b)
 #define EMULATE_ATOMIC_ADD_DOUBLE
 #endif
 

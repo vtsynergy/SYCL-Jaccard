@@ -22,15 +22,15 @@ else
   OPTS=-O3
 endif
 ifeq ($(COMPILER), HIPSYCL)
-  HIPSYCL_PATH=`pwd`/../edge2-hipSYCL
-  HIPSYCL_CLANG_PATH=`pwd`/../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall
+  HIPSYCL_PATH=`pwd`/../tools/hipSYCL-intel-build/install
+  HIPSYCL_CLANG_PATH=`pwd`/../tools/intel-llvm-build/install
 #  ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
 #  ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
-  ROCPROFILER_LIB=-lrocprofiler64
-  SYCL=$(HIPSYCL_PATH)/bin/syclcc -isystem /nfs-opt/rocm-3.8.0/include --rocm-device-lib-path=/nfs-opt/rocm-3.8.0/lib
+  ROCPROFILER_LIB=-lrocprofiler64 -ldl
+  SYCL=$(HIPSYCL_PATH)/bin/syclcc -isystem /nfs-opt/rocm-4.2.0/include --rocm-device-lib-path=/nfs-opt/rocm-4.2.0/amdgcn/bitcode --cuda-path=/usr/local/cuda-10.1 -DDISABLE_DP_WEIGHT
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL -D ROCPROFILE
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LIB)
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx701;cuda:sm_37" $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL -D ROCPROFILE --hipsycl-explicit-multipass
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets="omp;hip:gfx701;cuda:sm_37" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LIB) -fuse-ld=lld -lstdc++fs --hipsycl-explicit-multipass
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
