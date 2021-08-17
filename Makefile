@@ -47,9 +47,9 @@ ifeq ($(COMPILER), HIPSYCL)
   ifneq ($(CUDA_PATH),)
     SYCL := $(SYCL) --cuda-path=$(CUDA_PATH)
   endif
-  #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL --hipsycl-explicit-multipass
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld -lstdc++fs --hipsycl-explicit-multipass
+  #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib --hipsycl-explicit-multipass
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld -lstdc++fs
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
