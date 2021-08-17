@@ -31,7 +31,7 @@ ifeq ($(COMPILER), HIPSYCL)
   ifeq ($(ROCPROFILER),1)
 #  ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
 #  ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
-    ROCPROFILER_CFLAGS=-D ROCPROFILE
+    ROCPROFILER_C_FLAGS=-D ROCPROFILE
     ROCPROFILER_LD_FLAGS=-lrocprofiler64 -ldl
   endif
   ifeq ($(HIPSYCL_TARGETS),)
@@ -48,7 +48,7 @@ ifeq ($(COMPILER), HIPSYCL)
     SYCL := $(SYCL) --cuda-path=$(CUDA_PATH)
   endif
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib --hipsycl-explicit-multipass
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_INCL) -D HIPSYCL
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_C_FLAGS) -D HIPSYCL
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld -lstdc++fs
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
