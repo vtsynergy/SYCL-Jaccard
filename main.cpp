@@ -116,7 +116,7 @@ int main(int argc, char * argv[]) {
       }
 #endif //DEBUG_2
       cl::sycl::range<2> vertSum_local{1, 32};
-      cl::sycl::range<2> vertSum_global{min((graph->number_of_vertices + vertSum_local.get(0) -1) / vertSum_local.get(0), int32_t{CUDA_MAX_BLOCKS}) * vertSum_local.get(0), vertSum_local.get(1)};
+      cl::sycl::range<2> vertSum_global{std::min((size_t)(graph->number_of_vertices + vertSum_local.get(0) -1) / vertSum_local.get(0), size_t{CUDA_MAX_BLOCKS}) * vertSum_local.get(0), vertSum_local.get(1)};
 
       //Reuse the existing RowSum kernel with our pseudo indices to create synthetic vertex weights (sum of edges)
       //FIXME the vertex weight buffer may need to be a shareable pointer

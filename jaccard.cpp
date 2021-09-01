@@ -75,8 +75,8 @@ template <typename T>
 cl::sycl::event fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q)
 {
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  size_t block = min(n, (size_t)CUDA_MAX_KERNEL_THREADS);
-  size_t grid = min((n/block)+((n%block)?1:0), (size_t)CUDA_MAX_BLOCKS); 
+  size_t block = std::min((size_t)n, (size_t)CUDA_MAX_KERNEL_THREADS);
+  size_t grid = std::min((size_t)(n/block)+((n%block)?1:0), (size_t)CUDA_MAX_BLOCKS); 
   //TODO, do we need to emulate their stream behavior?
   cl::sycl::event ret_event = q.submit([&](cl::sycl::handler &cgh) {
     cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> x_acc = x.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>(n));
@@ -429,7 +429,7 @@ int jaccard(vertex_t n,
   // setup launch configuration
   //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
   cl::sycl::range<2> sum_local{y, 32};
-  cl::sycl::range<2> sum_global{min((n + sum_local.get(0) -1) / sum_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
+  cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) -1) / sum_local.get(0),(size_t) vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
 
   // launch kernel
   cl::sycl::event sum_event = q.submit([&](cl::sycl::handler &cgh) {
@@ -482,7 +482,7 @@ int jaccard(vertex_t n,
   //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
   cl::sycl::range<3> is_local{8, y, 32/y};
-  cl::sycl::range<3> is_global{min((n + is_local.get(0) - 1) / is_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
+  cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
 
   // launch kernel
   cl::sycl::event is_event = q.submit([&](cl::sycl::handler &cgh) {
@@ -516,8 +516,8 @@ int jaccard(vertex_t n,
 #endif //DEBUG_2
 
   // setup launch configuration
-  cl::sycl::range<1> jw_local{(size_t)min(e, edge_t{CUDA_MAX_KERNEL_THREADS})};
-  cl::sycl::range<1> jw_global{min((e + jw_local.get(0) - 1) / jw_local.get(0), edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
+  cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> jw_global{std::min((size_t)(e + jw_local.get(0) - 1) / jw_local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
 
   // launch kernel
   cl::sycl::event jw_event = q.submit([&](cl::sycl::handler &cgh) {
@@ -563,7 +563,7 @@ int jaccard_pairs(vertex_t n,
 
   // setup launch configuration
   cl::sycl::range<2> sum_local{y, 32};
-  cl::sycl::range<2> sum_global{min((n + sum_local.get(0) -1) / sum_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
+  cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) -1) / sum_local.get(0),(size_t) vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
@@ -592,7 +592,7 @@ int jaccard_pairs(vertex_t n,
   // setup launch configuration
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
   cl::sycl::range<3> is_local{8, y, 32/y};
-  cl::sycl::range<3> is_global{min((n + is_local.get(0) - 1) / is_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
+  cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
@@ -615,8 +615,8 @@ int jaccard_pairs(vertex_t n,
   //FIXME: Add SYCL asynchronous error checking, no need to flush
 
   // setup launch configuration
-  cl::sycl::range<1> jw_local{(size_t)min(num_pairs, edge_t{CUDA_MAX_KERNEL_THREADS})};
-  cl::sycl::range<1> jw_global{min((num_pairs + jw_local.get(0) - 1) / jw_local.get(0), edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
+  cl::sycl::range<1> jw_local{std::min((size_t)num_pairs, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> jw_global{std::min((size_t)(num_pairs + jw_local.get(0) - 1) / jw_local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {

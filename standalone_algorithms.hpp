@@ -22,10 +22,6 @@
 #ifndef __STANDALONE_ALGORITHMS_HPP__
 #define __STANDALONE_ALGORITHMS_HPP__
 
-#if defined(__CUDA__) || defined(ICX)
-#define min(a, b) std::min((size_t)a, (size_t)b)
-#endif
-
 //Custom fixes for SYCL version inconsistencies
 #ifdef SYCL_1_2_1
 #define group_barrier(foo) tid_info.barrier()
