@@ -134,7 +134,7 @@ int main(int argc, char * argv[]) {
       q.wait();
       std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices << " elements" << std::endl;
       {
-        auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_edges});
+        auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_vertices});
         for (int i = 0; i < graph->number_of_vertices; i++) {
           std::cout << debug_acc[i] << std::endl;
         }

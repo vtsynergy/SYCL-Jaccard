@@ -438,7 +438,7 @@ int jaccard(vertex_t n,
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
     if (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
       Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
       cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
     } else {
@@ -492,7 +492,7 @@ int jaccard(vertex_t n,
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
     if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
       Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
       cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
     } else {
