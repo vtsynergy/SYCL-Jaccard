@@ -34,6 +34,7 @@ std::tuple<int32_t, int32_t, WT> readCoord(std::ifstream &fileIn, bool isWeighte
 template <typename WT>
 std::set<std::tuple<int32_t, int32_t, WT>>* readMtx(std::ifstream &fileIn, bool * hasWeights) {
   std::set<std::tuple<int32_t, int32_t, WT>> * ret_edges = new std::set<std::tuple<int32_t, int32_t, WT>>();
+  std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::tuple<int32_t, int32_t, WT>>();
   //TODO This should really do all the header parsing here, rather than relying on the caller to do it
   *hasWeights = false;
   bool isDirected = false;
@@ -84,16 +85,18 @@ std::set<std::tuple<int32_t, int32_t, WT>>* readMtx(std::ifstream &fileIn, bool 
 #ifdef DEBUG_2
       std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " " << std::get<2>(line) << std::endl;
 #endif //DEBUG_2
-      ret_edges->insert(line);
+      tmp_vec->push_back(line);
       if (!isDirected) {
       //Add a reverse edge
 #ifdef DEBUG_2
       std::cout << "Adding reverse edge: " << std::get<1>(line) << " " << std::get<0>(line) << " " << std::get<2>(line) << std::endl;
 #endif //DEBUG_2
-      ret_edges->insert(std::tuple<int32_t, int32_t, WT>(std::get<1>(line), std::get<0>(line), std::get<2>(line)));
+      tmp_vec->push_back(std::tuple<int32_t, int32_t, WT>(std::get<1>(line), std::get<0>(line), std::get<2>(line)));
       }
     }
   } while (!fileIn.eof());
+  ret_edges->insert(tmp_vec->begin(), tmp_vec->end());
+  delete tmp_vec;
   return ret_edges;
 }
 
@@ -149,6 +152,7 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
 template <typename WT>
 std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> &csr, bool isZeroIndexed) {
 std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WT>>();
+std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::tuple<int32_t, int32_t, WT>>();
   //TODO Is this legal to do?
   //cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
 
@@ -166,10 +170,12 @@ std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<i
     //Just iterate over all the rows
     for (int row = 0; row < csr.number_of_vertices; row++) {
       for (int32_t offset = offset_acc[row], end = offset_acc[row+1]; offset < end; offset++) {
-        ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
+        tmp_vec->push_back(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
       }
     }
   //});
+  ret_set->insert(tmp_vec->begin(), tmp_vec->end());
+  delete tmp_vec;
   return ret_set;
 }
 
