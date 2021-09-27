@@ -49,7 +49,10 @@ ifeq ($(COMPILER), HIPSYCL)
   endif
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib --hipsycl-explicit-multipass
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_C_FLAGS) -D HIPSYCL
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld -lstdc++fs
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld
+  ifneq ($(NO_LIBSTDFS),1)
+    SYCL_LD_FLAGS :=  $(SYCL_LD_FLAGS) -lstdc++fs
+  endif
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
@@ -73,7 +76,7 @@ endif
 all: jaccardSYCL compareCoords
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE)
+	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
@@ -85,7 +88,7 @@ readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
 
 compareCoords: compareCoords.o readMtxToCSR.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE)
+	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o compareCoords.o -c compareCoords.cpp
