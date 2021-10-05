@@ -21,6 +21,9 @@ else ifeq ($(DEBUG), 2)
 else
   OPTS=-O3
 endif
+
+CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX $(OPTS)
+SYCL_C_FLAGS := $(SYCL_C_FLAGS) $(CFLAGS)
 ifeq ($(COMPILER), HIPSYCL)
   ifeq ($(HIPSYCL_PATH),)
     HIPSYCL_PATH=/opt/hipSYCL
@@ -48,7 +51,7 @@ ifeq ($(COMPILER), HIPSYCL)
     SYCL := $(SYCL) --cuda-path=$(CUDA_PATH)
   endif
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib --hipsycl-explicit-multipass
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(OPTS) $(ROCPROFILER_C_FLAGS) -D HIPSYCL
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(ROCPROFILER_C_FLAGS) -D HIPSYCL
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld
   ifneq ($(NO_LIBSTDFS),1)
     SYCL_LD_FLAGS :=  $(SYCL_LD_FLAGS) -lstdc++fs
@@ -58,17 +61,17 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
 #  LD_LIBRARY_PATH:=$(ONEAPI_PATH)/compiler/lib/intel64_lin:$(LD_LIBRARY_PATH)
   SYCL=$(ONEAPI_PATH)/bin/icx
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware
   JACCARD_REUSE=-reuse-exe=jaccardSYCL
   COMPARE_REUSE=-reuse-exe=compareCoords
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware
   endif
   ifeq ($(FPGA), INTEL_EMU)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga
   endif
 endif
 
@@ -91,7 +94,7 @@ compareCoords: compareCoords.o readMtxToCSR.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
-	$(SYCL) $(SYCL_C_FLAGS) -o compareCoords.o -c compareCoords.cpp
+	$(SYCL) $(CFLAGS) -o compareCoords.o -c compareCoords.cpp
 
 .PHONY: clean
 clean:
