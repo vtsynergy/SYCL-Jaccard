@@ -19,6 +19,7 @@
 #include <string.h>
 #include "readMtxToCSR.hpp"
 
+//FIXME Producing a weight vector that we're not going to use inflates memory O(edges) unnecessarily
 template <typename WT>
 std::tuple<int32_t, int32_t, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
   std::tuple<int32_t, int32_t, WT> line;
@@ -32,7 +33,7 @@ std::tuple<int32_t, int32_t, WT> readCoord(std::ifstream &fileIn, bool isWeighte
 }
 //This assumes we've already read the header
 template <typename WT>
-std::set<std::tuple<int32_t, int32_t, WT>>* readMtx(std::ifstream &fileIn, bool * hasWeights) {
+std::set<std::tuple<int32_t, int32_t, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights) {
   std::set<std::tuple<int32_t, int32_t, WT>> * ret_edges = new std::set<std::tuple<int32_t, int32_t, WT>>();
   std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::tuple<int32_t, int32_t, WT>>();
   //TODO This should really do all the header parsing here, rather than relying on the caller to do it
@@ -179,12 +180,68 @@ std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::t
   return ret_set;
 }
 
+template <typename VT, typename ET, typename WT>
+void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed, bool isWeighted) {
+  CSRFileHeader header = {int64_t{csr.number_of_vertices}, int64_t{csr.number_of_edges}, {isWeighted, isZeroIndexed, std::is_same<VT, int64_t>::value, std::is_same<ET, int64_t>::value, std::is_same<WT, int64_t>::value}};
+  //Write header
+  fileOut.write(reinterpret_cast<char*>(&header), sizeof(CSRFileHeader));
+  //Write Vertex Offsets
+  fileOut.write(reinterpret_cast<char*>(csr.offsets), sizeof(ET)*(csr.number_of_vertices+1));
+  //Write Neighbor edges
+  fileOut.write(reinterpret_cast<char*>(csr.indices), sizeof(VT)*csr.number_of_edges);
+  //Write Weights (If any)
+  if (isWeighted) {
+    fileOut.write(reinterpret_cast<char*>(csr.edge_data), sizeof(WT)*csr.number_of_edges);
+  }
+}
+
+template<typename VT, typename ET, typename WT>
+inline GraphCSRView<VT, ET, WT> * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
+  //Read Vertex Offsets
+  std::vector<ET> * offsets = new std::vector<ET>(header.numVerts+1);
+  fileIn.read(reinterpret_cast<char*>(offsets->data()),sizeof(ET)* (header.numVerts+1));
+  //Read Neighbor Indices
+  std::vector<VT> * indices = new std::vector<VT>(header.numEdges);
+  fileIn.read(reinterpret_cast<char*>(indices->data()),sizeof(VT)* header.numEdges);
+  //Read Weights (If any)
+  WT * weightsPtr = nullptr;
+  if (header.flags.isWeighted) {
+    std::vector<WT> * weights = new std::vector<WT>(header.numEdges);
+    fileIn.read(reinterpret_cast<char*>(weights->data()),sizeof(WT)* header.numEdges);
+    weightsPtr = weights->data();
+  }
+  //Construct and return the Graph
+  return new GraphCSRView<VT, ET, WT>(offsets->data(), indices->data(), weightsPtr, header.numVerts, header.numEdges);
+}
+
+//These inlines just progressively decode the header flags into specializations
+template <typename VT, typename ET>
+inline void * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
+  if (header.flags.isWeightT64) return static_cast<void*>(CSRFileReader<VT, ET, double>(fileIn, header));
+  else return static_cast<void*>(CSRFileReader<VT, ET, float>(fileIn, header));
+}
+template <typename VT>
+inline void * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
+  if (header.flags.isEdgeT64) return CSRFileReader<VT, int64_t>(fileIn, header);
+  else return CSRFileReader<VT, int32_t>(fileIn, header);
+}
+inline void * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
+  if (header.flags.isVertexT64) return CSRFileReader<int64_t>(fileIn, header);
+  else return CSRFileReader<int32_t>(fileIn, header);
+}
+
+void * FileToCSR(std::ifstream &fileIn, CSRFileHeader * header){
+  //Read the header (local)
+  CSRFileHeader localHeader;
+  fileIn.read(reinterpret_cast<char*>(&localHeader),sizeof(CSRFileHeader));
+  //If header pointer is non-null, set it
+  if (header != nullptr) *header = localHeader;
+  return CSRFileReader(fileIn, localHeader);
+}
+
 //Explicit instantiations since separately compiling and linking
-template std::set<std::tuple<int32_t, int32_t, double>> *readMtx(std::ifstream &fileIn, bool * hasWeights);
-template std::set<std::tuple<int32_t, int32_t, float>> *readMtx(std::ifstream &fileIn, bool * hasWeights);
-template GraphCSRView<int32_t, int32_t, double> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, double>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
-template GraphCSRView<int32_t, int32_t, float> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, float>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
-template std::set<std::tuple<int32_t, int32_t, double>> *CSRToMtx(GraphCSRView<int32_t, int32_t, double> &csr, bool isZeroIndexed = false);
-template std::set<std::tuple<int32_t, int32_t, float>> *CSRToMtx(GraphCSRView<int32_t, int32_t, float> &csr, bool isZeroIndexed = false);
-template std::tuple<int32_t, int32_t, double> readCoord(std::ifstream &fileIn, bool isWeighted = true);
-template std::tuple<int32_t, int32_t, float> readCoord(std::ifstream &fileIn, bool isWeighted = true);
+template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn, bool isWeighted);
+template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *fileToMTXSet(std::ifstream &fileIn, bool * hasWeights);
+template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
+template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *CSRToMtx(GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed = false);
+template void CSRToFile<int32_t, int32_t, WEIGHT_TYPE>(std::ofstream &fileOut, GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed = false, bool isWeighted = false);

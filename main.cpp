@@ -14,6 +14,14 @@
  * limitations under the License.
  */
 
+#if __GNUC__ == 7
+  #include <experimental/filesystem>
+  namespace std {
+    namespace filesystem = experimental::filesystem;
+  }
+#else
+  #include <filesystem>
+#endif
 #include <iostream>
 #include <CL/sycl.hpp>
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
@@ -32,15 +40,73 @@
 #endif
 
 
+typedef enum {
+  mtx,
+  csr,
+  other = -1
+} graphFileType; 
+void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofstream & retOFS, graphFileType & inType, graphFileType & outType) {
+  std::filesystem::path inPath(inFile);
+  std::filesystem::path outPath(outFile);
+  if (inPath.extension() == ".mtx") {
+    inType = mtx;
+    retIFS = std::ifstream(inPath, std::ios_base::in);
+  } else if (inPath.extension() == ".csr") {
+    inType = csr;
+    retIFS = std::ifstream(inPath, std::ios_base::in | std::ios_base::binary);
+  } else {
+    std::cerr << "Input File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
+    exit(1);
+  }
+  if (outPath.extension() == ".mtx") {
+    outType = mtx;
+    retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc);
+  } else if (outPath.extension() == ".csr") {
+    outType = csr;
+    retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+  } else {
+    std::cerr << "Output File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
+    exit(2);
+  }
+}
+
 int main(int argc, char * argv[]) {
 
   //Open the specified file for reading
   //TODO arg bounds safety
-  std::ifstream fileIn(argv[1]);
-  std::ofstream fileOut(argv[2]);
+  std::ifstream fileIn;
+  std::ofstream fileOut;
+  graphFileType inType, outType;
+  setUpFiles(argv[1], argv[2], fileIn, fileOut, inType, outType); 
   bool isWeighted;
-  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = readMtx<WEIGHT_TYPE>(fileIn, &isWeighted);
-  fileIn.close();
+  GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph;
+  if (inType == mtx) { // IF extension is mtx, use the string r/w
+    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<WEIGHT_TYPE>(fileIn, &isWeighted);
+    //Convert it to a CSR
+    //FIXME this should read directly to buffers with writeback pointers
+    graph = mtxSetToCSR(*mtx_graph);
+    //Add an environment variable to dump CSR for both input and output as a sideeffect of an MTX-file run
+    char * dump_csr = std::getenv("JACCARD_IN_CSR_DUMP_FILEPATH");
+    if (dump_csr != NULL) {
+      #ifdef DEBUG
+        std::cerr << "Requested CSR Dump of input file \"" << argv[1] << "\" to \"" << dump_csr << "\"" << std::endl;
+      #endif
+      std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+      CSRToFile(csrDumpFile, (*graph), false, isWeighted);
+      csrDumpFile.close();
+    }
+  } else if (inType == csr) { // IF extension is csr, use binary r/w
+    CSRFileHeader header;
+    graph = static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE>*>(FileToCSR(fileIn, &header));
+    isWeighted = header.flags.isWeighted;
+    if (header.flags.isVertexT64 || header.flags.isEdgeT64 || (header.flags.isWeighted && ((header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) || (!header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
+      std::cerr << "Binary CSR Input Header does not match required data types" << std::endl;
+      exit(3);
+    }
+  } else {
+    std::cerr << "InputGraphType is" << inType << std::endl;
+  }
+  fileIn.close(); 
   //We can't override weighting until here, or else the MTX will get confused about tokens per line if the file and override disagree on the presence of weight values.
   //Undef=defer to file, 1=Weighted, 0=Unweighted
   char * weighted_override = std::getenv("JACCARD_FORCE_WEIGHTED");
@@ -84,9 +150,6 @@ int main(int argc, char * argv[]) {
     }
   }
 
-  //Convert it to a CSR
-  //FIXME this should read directly to buffers with writeback pointers
-  GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph = mtxSetToCSR(*mtx_graph);
 
   //Run the CPU implementation
   //TODO
@@ -168,11 +231,27 @@ int main(int argc, char * argv[]) {
     });
     #endif
 
-    //convert back to MTX (implicit copyback if not done explicitly)
-    gpu_results_mtx = CSRToMtx<WEIGHT_TYPE>(gpu_graph_results, true);
+    if (outType == mtx) { // IF extension is mtx, use the string r/w
+      //Add an environment variable to dump CSR for output as a sideeffect of an MTX-file run
+      char * dump_csr = std::getenv("JACCARD_OUT_CSR_DUMP_FILEPATH");
+      if (dump_csr != NULL) {
+        #ifdef DEBUG
+          std::cerr << "Requested CSR Dump of output file \"" << argv[2] << "\" to \"" << dump_csr << "\"" << std::endl;
+        #endif
+        std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+        CSRToFile(csrDumpFile, gpu_graph_results, false, isWeighted);
+        csrDumpFile.close();
+      }
+      //convert back to MTX (implicit copyback if not done explicitly)
+      //FIXME Add the description comment and vert/edge header lines to make it actually MTX
+      std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = CSRToMtx<WEIGHT_TYPE>(gpu_graph_results, true);
+      for (std::tuple<int32_t, int32_t, WEIGHT_TYPE> edge : *gpu_results_mtx) {
+        //std::cout << "Source, Destination, JS-Score: " << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+        fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+      }
+    } else if (outType == csr) { // IF extension is csr, use binary r/w
+      CSRToFile(fileOut, gpu_graph_results, false, isWeighted);
+    } //No else, but extensible if we need different outputs eventually
+    fileOut.close();
   } //End Results buffer scope
-  for (std::tuple<int32_t, int32_t, WEIGHT_TYPE> edge : *gpu_results_mtx) {
-    fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
-  } 
-  fileOut.close();
 }

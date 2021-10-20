@@ -79,10 +79,10 @@ endif
 all: jaccardSYCL compareCoords
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
+	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS) --std=c++17 -lstdc++fs
 
 main.o: main.cpp
-	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
+	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp --std=c++17
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
