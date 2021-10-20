@@ -50,6 +50,11 @@ int main(int argc, char * argv[]) {
     #endif
     if (std::strcmp(weighted_override, "1") == 0) isWeighted = true;
     if (std::strcmp(weighted_override, "0") == 0) isWeighted = false;
+    //If the graph has null weights vector, we have to provide it something if it's being forced on
+    if (isWeighted && graph->edge_data == nullptr) {
+      std::vector<WEIGHT_TYPE> * forcedWeights = new std::vector<WEIGHT_TYPE>(graph->number_of_edges, WEIGHT_TYPE{1.0});
+      graph->edge_data = forcedWeights->data();
+    }
   }
 
   //Go ahead and iterate over the SYCL devices and pick one if they've specified a device number
@@ -90,7 +95,7 @@ int main(int argc, char * argv[]) {
   //Results buffer
   WEIGHT_TYPE * gpu_results;
   gpu_results = (WEIGHT_TYPE*)malloc(sizeof(WEIGHT_TYPE*)*(graph->number_of_edges));
-  //Pre-declare our results MTX set, since we'll need it after the device buffer scope
+  ///<Pre-declare our results MTX set, since we'll need it after the device buffer scope
   std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx;
   { //Results buffer scope, for implicit copyback
     cl::sycl::buffer<WEIGHT_TYPE> results_buf(gpu_results, (graph->number_of_edges));
