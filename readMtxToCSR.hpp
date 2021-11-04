@@ -23,13 +23,13 @@
 template <typename ET, typename VT, typename WT>
 std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true);
 template <typename ET, typename VT, typename WT>
-std::set<std::tuple<ET, VT, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected);
+std::set<std::tuple<ET, VT, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected, int64_t * numVerts = nullptr, int64_t * numEdges = nullptr);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>>* invertDirection(std::set<std::tuple<ET, VT, WT>> & mtx);
 template <typename ET, typename VT, typename WT>
 void removeReverseEdges(std::set<std::tuple<ET, VT, WT>> &mtx);
 template <typename ET, typename VT, typename WT>
-GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
+GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> &mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false);
 template <typename ET, typename VT, typename WT>

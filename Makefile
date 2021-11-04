@@ -78,16 +78,22 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
 endif
 
 .PHONY: all
-all: jaccardSYCL compareCoords
+all: jaccardSYCL compareCoords fileConvert
 
 compareCoords: compareCoords.o readMtxToCSR.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
+
+fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
+	g++ -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(LDFLAGS)
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
 	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(CFLAGS) -o compareCoords.o -c compareCoords.cpp
+
+fileConvert.o: fileConvert.cpp
+	g++ -o fileConvert.o -c fileConvert.cpp $(CFLAGS) $(OPTS)
 
 filetypes.o: filetypes.cpp
 	g++ -o filetypes.o -c filetypes.cpp $(CFLAGS) $(OPTS)
@@ -103,4 +109,4 @@ readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 
 .PHONY: clean
 clean:
-	rm jaccardSYCL compareCoords *.o	
+	rm jaccardSYCL compareCoords fileConvert *.o	
