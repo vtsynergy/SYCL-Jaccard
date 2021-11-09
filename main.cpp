@@ -70,7 +70,7 @@ int main(int argc, char * argv[]) {
   if (!isDirected && !hasReverseEdges) {
     if (working == csr) {
       //Switch it to MTX to reverse them
-      mtx_graph = CSRToMtx(*graph, isZeroIndexed);
+      mtx_graph = CSRToMtx(*graph, isZeroIndexed, isWeighted);
       working = mtx;
       delete graph; //Don't need to maintain it as a CSR, as a new one will be generated later
     } else if ( working != mtx) {
@@ -230,11 +230,13 @@ int main(int argc, char * argv[]) {
       delete graph->edge_data;
     }
     delete graph;
+    //Set isWeighted to true to retain the scors
+    isWeighted = true;
     graph = nullptr;
     //Only remove edges if the formats disagree
     std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = nullptr;
     if (hasReverseEdges && (!keepReverseEdges || (outType == mtx && !isDirected))) {
-      gpu_results_mtx = CSRToMtx(gpu_graph_results, true);
+      gpu_results_mtx = CSRToMtx(gpu_graph_results, true, isWeighted);
       removeReverseEdges(*gpu_results_mtx);
       hasReverseEdges = false;
       working = mtx;
@@ -259,7 +261,7 @@ int main(int argc, char * argv[]) {
     if (outType == mtx) { // IF extension is mtx, use the string r/w
       //convert back to MTX (implicit copyback if not done explicitly)
       if (working == csr && gpu_results_mtx == nullptr) { //We have not had to generate the MTX yet (there were no reverse edges)
-        gpu_results_mtx = CSRToMtx<int32_t, int32_t, WEIGHT_TYPE>(gpu_graph_results, isZeroIndexed);
+        gpu_results_mtx = CSRToMtx<int32_t, int32_t, WEIGHT_TYPE>(gpu_graph_results, true, isWeighted);
       }
       mtxSetToFile(fileOut, *gpu_results_mtx, gpu_graph_results.number_of_vertices, gpu_graph_results.number_of_edges, isWeighted, isDirected);
     } else if (outType == csr) { // IF extension is csr, use binary r/w

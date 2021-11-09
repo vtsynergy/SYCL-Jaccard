@@ -19,6 +19,20 @@
 #include <string.h>
 #include "readMtxToCSR.hpp"
 
+template <typename ET, typename VT, typename WT>
+auto mtx_less = [](const std::tuple<ET, VT, WT> first, const std::tuple<ET, VT, WT> second) {
+  //return (first < second);
+  if (std::get<1>(first) < std::get<1>(second)) return true;
+  if (std::get<1>(first) > std::get<1>(second)) return false;
+  if (std::get<0>(first) < std::get<0>(second)) return true;
+  if (std::get<0>(first) > std::get<0>(second)) return false;
+  if (std::get<2>(first) < std::get<2>(second)) return true;
+  if (std::get<2>(first) > std::get<2>(second)) return false;
+  return false;
+};
+
+
+
 //FIXME Producing a weight vector that we're not going to use inflates memory O(edges) unnecessarily
 template <typename ET, typename VT, typename WT>
 std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
@@ -107,10 +121,14 @@ std::set<std::tuple<ET, VT, WT>>* invertDirection(std::set<std::tuple<ET, VT, WT
   }
   ret_edges->insert(tmp_vec->begin(), tmp_vec->end());
   delete tmp_vec;
+  return ret_edges;
 }
 template <typename ET, typename VT, typename WT>
 void removeReverseEdges(std::set<std::tuple<ET, VT, WT>> &mtx) {
-  for (std::tuple<ET, VT, WT> coord : mtx) {
+  //We want to reverse iterate this, because MTX is sorted by destination
+  //for (std::tuple<ET, VT, WT> coord : mtx) {
+  for (auto iter = mtx.rbegin(); iter != mtx.rend(); ++iter) {
+    std::tuple<ET, VT, WT> coord = *iter;
     if (mtx.find(coord) != mtx.end()) {
       mtx.erase(std::tuple<ET, VT, WT>(std::get<1>(coord), std::get<0>(coord), std::get<2>(coord)));
     } else {
@@ -169,7 +187,7 @@ GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> &mtx, bo
 }
 
 template <typename ET, typename VT, typename WT>
-std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed) {
+std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed, bool isWeighted) {
 std::set<std::tuple<ET, VT, WT>> * ret_set = new std::set<std::tuple<ET, VT, WT>>();
 std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   //TODO Is this legal to do?
@@ -189,7 +207,10 @@ std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, V
     //Just iterate over all the rows
     for (int row = 0; row < csr.number_of_vertices; row++) {
       for (ET offset = offset_acc[row], end = offset_acc[row+1]; offset < end; offset++) {
-        tmp_vec->push_back(std::tuple<ET, VT, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
+        if (isWeighted) 
+          tmp_vec->push_back(std::tuple<ET, VT, WT>(row + (isZeroIndexed ? 1 : 0), indices_acc[offset] + (isZeroIndexed ? 1 : 0), edge_acc[offset]));
+        else
+          tmp_vec->push_back(std::tuple<ET, VT, WT>(row + (isZeroIndexed ? 1 : 0), indices_acc[offset] + (isZeroIndexed ? 1 : 0), 1));
       }
     }
   //});
@@ -200,7 +221,7 @@ std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, V
 template <typename ET, typename VT, typename WT>
 void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected) {
     //Add the description comment
-    fileOut << "\%\%MatrixMarket matrix coordinate ";
+    fileOut << "\%MatrixMarket matrix coordinate ";
     if (isWeighted) {
       if constexpr (std::is_same<WT, double>::value) {
         fileOut << "double ";
@@ -218,9 +239,14 @@ void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx,
     //Start constructing the vert/edge header line
     fileOut << numVerts << " " << numVerts << " ";
     fileOut << mtx.size() << std::endl;
-    for (std::tuple<VT, ET, WEIGHT_TYPE> edge : mtx) {
+    //Need to resort it to match destination-major MTX format
+    std::set<std::tuple<ET, VT, WEIGHT_TYPE>, decltype(mtx_less<ET, VT, WEIGHT_TYPE>)> out_sorted_mtx{mtx.begin(), mtx.end(), mtx_less<ET, VT, WEIGHT_TYPE>};
+    for (std::tuple<ET, VT, WEIGHT_TYPE> edge : out_sorted_mtx) {
       //std::cout << "Source, Destination, JS-Score: " << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
-      fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+      if (isWeighted)
+        fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+      else
+        fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << std::endl;
     }
 }
 
@@ -300,7 +326,7 @@ void * FileToCSR(std::ifstream &fileIn, CSRFileHeader * header){
 template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn, bool isWeighted);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected, int64_t * numVerts, int64_t * numEdges);
 template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, bool ignoreSelf, bool isZeroIndexed);
-template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *CSRToMtx(GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed);
+template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *CSRToMtx(GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed, bool isWeighted);
 template void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected);
 template void CSRToFile<int32_t, int32_t, WEIGHT_TYPE>(std::ofstream &fileOut, GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool keepReverseEdges);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* invertDirection(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> & mtx);
