@@ -35,6 +35,29 @@
 #endif
 
 
+typedef enum {
+  noChoice=0,
+  isForced=1,
+  ec_coarse=2,
+  vc_coarse=4,
+  undefined=-1
+} implSelect;
+
+implSelect selectImplementation() {
+  implSelect retVal = noChoice;
+  char * force_ec = std::getenv("JACCARD_FORCE_EDGE_CENTRIC");
+  if (force_ec != nullptr) {
+    std::cerr << "FORCE Edge-Centric Implementation" << std::endl;
+    retVal = (implSelect)(ec_coarse | isForced);
+  }
+  char * force_vc = std::getenv("JACCARD_FORCE_VERTEX_CENTRIC");
+  if (force_vc != nullptr) {
+    std::cerr << "FORCE Vertex-Centric Implementation" << std::endl;
+    retVal = (implSelect)(vc_coarse | isForced);
+  }
+  return retVal;
+}
+
 int main(int argc, char * argv[]) {
 
   //Open the specified file for reading
@@ -144,6 +167,7 @@ int main(int argc, char * argv[]) {
       }
     }
   }
+  std::cout << "Running on "<< q.get_device().get_info<cl::sycl::info::device::name>()<< "\n";
 
 
   //Run the CPU implementation
@@ -158,62 +182,70 @@ int main(int argc, char * argv[]) {
   { //Results buffer scope, for implicit copyback
     cl::sycl::buffer<WEIGHT_TYPE> results_buf(gpu_results, (graph->number_of_edges));
 
-    if (isWeighted) {
-      //Create the pseudo csrInd buffer
-      cl::sycl::buffer<int32_t> presumInd(graph->number_of_edges);
-      //populate the pseudo buffer with a named lambda
-      cl::sycl::event presum_event = q.submit([&](cl::sycl::handler &cgh){
-        cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::discard_write> presumInd_acc = presumInd.get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-        cgh.parallel_for<class presumInd_kernel>(cl::sycl::range<1>{(size_t)graph->number_of_edges}, [=](cl::sycl::id<1> tid) {
-          presumInd_acc[tid]=tid.get(0);
+    // Pick an implementation to use
+    // TODO: Automatic selection based on graph properties
+    implSelect implementation = selectImplementation();
+
+    if (implementation & ec_coarse) {
+      sygraph::jaccard<true, int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
+
+    } else if (implementation & vc_coarse) {
+      if (isWeighted) {
+        //Create the pseudo csrInd buffer
+        cl::sycl::buffer<int32_t> presumInd(graph->number_of_edges);
+        //populate the pseudo buffer with a named lambda
+        cl::sycl::event presum_event = q.submit([&](cl::sycl::handler &cgh){
+          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::discard_write> presumInd_acc = presumInd.get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+          cgh.parallel_for<class presumInd_kernel>(cl::sycl::range<1>{(size_t)graph->number_of_edges}, [=](cl::sycl::id<1> tid) {
+            presumInd_acc[tid]=tid.get(0);
+          });
         });
-      });
-#ifdef DEBUG_2
-      q.wait();
-      std::cout << "DEBUG: Post-PreSum weight index vector of " << graph->number_of_edges << " elements" << std::endl;
-      {
-        auto debug_acc = presumInd.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_edges});
-        for (int i = 0; i < graph->number_of_edges; i++) {
-          std::cout << debug_acc[i] << std::endl;
+  #ifdef DEBUG_2
+        q.wait();
+        std::cout << "DEBUG: Post-PreSum weight index vector of " << graph->number_of_edges << " elements" << std::endl;
+        {
+          auto debug_acc = presumInd.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_edges});
+          for (int i = 0; i < graph->number_of_edges; i++) {
+            std::cout << debug_acc[i] << std::endl;
+          }
         }
-      }
-#endif //DEBUG_2
-      cl::sycl::range<2> vertSum_local{1, 32};
-      cl::sycl::range<2> vertSum_global{std::min((size_t)(graph->number_of_vertices + vertSum_local.get(0) -1) / vertSum_local.get(0), size_t{CUDA_MAX_BLOCKS}) * vertSum_local.get(0), vertSum_local.get(1)};
+  #endif //DEBUG_2
+        cl::sycl::range<2> vertSum_local{1, 32};
+        cl::sycl::range<2> vertSum_global{std::min((size_t)(graph->number_of_vertices + vertSum_local.get(0) -1) / vertSum_local.get(0), size_t{CUDA_MAX_BLOCKS}) * vertSum_local.get(0), vertSum_local.get(1)};
 
-      //Reuse the existing RowSum kernel with our pseudo indices to create synthetic vertex weights (sum of edges)
-      //FIXME the vertex weight buffer may need to be a shareable pointer
-      cl::sycl::buffer<WEIGHT_TYPE> vertWeights(graph->number_of_vertices);
-      cl::sycl::event vertSum_event = q.submit([&](cl::sycl::handler &cgh) {
-        cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrPtr_acc = graph->offsets.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices+1});
-        cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrInd_acc = presumInd.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-        cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::discard_write> work_acc = vertWeights.get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices});
-        cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(vertSum_local.get(0) * vertSum_local.get(1), cgh);
-        cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read> weight_in_acc = graph->edge_data.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-        sygraph::detail::Jaccard_RowSumKernel<true, int32_t, int32_t, WEIGHT_TYPE> vertSum_kernel(graph->number_of_vertices, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
-        cgh.parallel_for(cl::sycl::nd_range<2>{vertSum_global, vertSum_local}, vertSum_kernel);
-      });
-#ifdef DEBUG_2
-      q.wait();
-      std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices << " elements" << std::endl;
-      {
-        auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_vertices});
-        for (int i = 0; i < graph->number_of_vertices; i++) {
-          std::cout << debug_acc[i] << std::endl;
+        //Reuse the existing RowSum kernel with our pseudo indices to create synthetic vertex weights (sum of edges)
+        //FIXME the vertex weight buffer may need to be a shareable pointer
+        cl::sycl::buffer<WEIGHT_TYPE> vertWeights(graph->number_of_vertices);
+        cl::sycl::event vertSum_event = q.submit([&](cl::sycl::handler &cgh) {
+          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrPtr_acc = graph->offsets.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices+1});
+          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrInd_acc = presumInd.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::discard_write> work_acc = vertWeights.get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices});
+          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(vertSum_local.get(0) * vertSum_local.get(1), cgh);
+          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read> weight_in_acc = graph->edge_data.get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+          sygraph::detail::Jaccard_RowSumKernel<true, int32_t, int32_t, WEIGHT_TYPE> vertSum_kernel(graph->number_of_vertices, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
+          cgh.parallel_for(cl::sycl::nd_range<2>{vertSum_global, vertSum_local}, vertSum_kernel);
+        });
+  #ifdef DEBUG_2
+        q.wait();
+        std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices << " elements" << std::endl;
+        {
+          auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>{(size_t)graph->number_of_vertices});
+          for (int i = 0; i < graph->number_of_vertices; i++) {
+            std::cout << debug_acc[i] << std::endl;
+          }
         }
-      }
-#endif //DEBUG_2
-#ifdef EVENT_PROFILE
-      wait_and_print(presum, "PreSum")
-      wait_and_print(vertSum, "VertexSum")
-#endif //EVENT_PROFILE
-    
-
-      sygraph::jaccard<int32_t, int32_t, WEIGHT_TYPE>(*graph, vertWeights, results_buf, q);
-    } else { //Unweighted
-      sygraph::jaccard<int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
-    }
+  #endif //DEBUG_2
+  #ifdef EVENT_PROFILE
+        wait_and_print(presum, "PreSum")
+        wait_and_print(vertSum, "VertexSum")
+  #endif //EVENT_PROFILE
+      
   
+        sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, vertWeights, results_buf, q);
+      } else { //Unweighted
+        sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
+      }
+    }
     //Create a new results graph view, using the a copy constructor to re-reference the results buffer
     GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> gpu_graph_results(graph->offsets, graph->indices, results_buf, graph->number_of_vertices, graph->number_of_edges);
 

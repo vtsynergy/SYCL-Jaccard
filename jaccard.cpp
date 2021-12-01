@@ -1,6 +1,6 @@
 /*
  * Original CUDA Copyright (c) 2019-2021, NVIDIA CORPORATION.
- * SYCL translation Copyright (c) 2021-2022, Virginia Tech
+ * SYCL translation and edge-centric components Copyright (c) 2021-2022, Virginia Tech
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -261,6 +261,108 @@ public:
   }
 };
 
+
+template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+class Jaccard_ec_scan
+{
+  edge_t e;
+  vertex_t n;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
+public:
+  Jaccard_ec_scan(edge_t e, 
+  vertex_t n, 
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind,
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
+  : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j}
+  {
+  }
+  const void operator()(cl::sycl::nd_item<1> tid_info) const 
+  {
+    edge_t j,i;
+    for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) 
+	{
+         for(i=csrPtr[j];i<csrPtr[j+1];i++)
+			{
+			 dest_ind[i]=j;
+			 weight_j[i]=0;
+			}
+    }
+  }
+};
+
+//Edge-centric-unweighted-kernel
+template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+class Jaccard_ec_unweighted
+{
+  edge_t e;
+  vertex_t n;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
+public:
+  Jaccard_ec_unweighted(edge_t e,
+    vertex_t n,  
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
+  : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j}
+  {
+  }
+  const void operator()(cl::sycl::nd_item<1> tid_info) const 
+  {
+    edge_t i, j, Ni, Nj,tid;
+    vertex_t row, col;
+    vertex_t ref, cur, ref_col, cur_col, match;
+    weight_t ref_val;
+
+    for (tid = tid_info.get_global_id(0); tid < e; tid += tid_info.get_global_range(0)) 
+	{ 
+	   row=csrInd[tid];
+       col=dest_ind[tid];
+	 
+        // find which row has least elements (and call it reference row)
+        Ni  = csrPtr[row + 1] - csrPtr[row];
+        Nj  = csrPtr[col + 1] - csrPtr[col];
+        ref = (Ni < Nj) ? row : col;
+        cur = (Ni < Nj) ? col : row;
+
+
+        // compute new sum weights
+        for (i = csrPtr[ref] ; i < csrPtr[ref + 1]; i ++) {
+        ref_col = csrInd[i];
+        // binary search (column indices are sorted within each row)
+        edge_t left  = csrPtr[cur];
+        edge_t right = csrPtr[cur + 1] - 1;
+        while (left <= right) {
+          edge_t middle = (left + right) >> 1;
+          cur_col       = csrInd[middle];
+          if (cur_col > ref_col) {
+            right = middle - 1;
+          } else if (cur_col < ref_col) {
+            left = middle + 1;
+          } else {
+            weight_j[tid] = weight_j[tid]+1;
+            break;
+          }
+        }
+		}
+        //compute JS
+		weight_j[tid]= weight_j[tid]/((weight_t)(Ni+Nj)-weight_j[tid]);
+
+    }
+      
+    }
+};
+
+
+
+
+
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
@@ -412,7 +514,7 @@ public:
   }
 };
 
-template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+template <bool edge_centric, bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 int jaccard(vertex_t n,
             edge_t e,
             cl::sycl::buffer<edge_t> &csrPtr,
@@ -421,127 +523,167 @@ int jaccard(vertex_t n,
             cl::sycl::buffer<weight_t> &work,
             cl::sycl::buffer<weight_t> &weight_i,
             cl::sycl::buffer<weight_t> &weight_s,
+			cl::sycl::buffer<vertex_t> &dest_ind,
             cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
-  //Needs to be 1 for barriers in warp intrinsic emulation
-  size_t y = 1;
+  if constexpr (edge_centric) { //Edge-Centric
+    //Needs to be 1 for barriers in warp intrinsic emulation
+    size_t y = 1;
+    cl::sycl::range<1> scan_local{std::min((size_t)n, (size_t)vertex_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> scan_global{std::min((size_t)(n + scan_local.get(0) - 1) / scan_local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) * scan_local.get(0)};
 
-  // setup launch configuration
-  //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-  cl::sycl::range<2> sum_local{y, 32};
-  cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) -1) / sum_local.get(0),(size_t) vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
+    // Scan kernel to set up adjacency list
+    cl::sycl::event scan_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind_acc = dest_ind.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
+      Jaccard_ec_scan<weighted, vertex_t, edge_t, weight_t> escan_kernel(e, n, csrPtr_acc, dest_ind_acc, weight_j_acc);
+      cgh.parallel_for(cl::sycl::nd_range<1>{scan_global, scan_local}, escan_kernel);	  
+    });
+  
+    q.wait();
 
-  // launch kernel
-  cl::sycl::event sum_event = q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
-    if (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-      Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
-      cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
-    } else {
-      Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, work_acc, shfl_temp);
-      cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+    cl::sycl::range<1> ec_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> ec_global{std::min((size_t)(e + ec_local.get(0) - 1) / ec_local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) * ec_local.get(0)};
+ 
+  // Edge-centric kernel
+    cl::sycl::event edgec_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind_acc = dest_ind.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
+      Jaccard_ec_unweighted<weighted, vertex_t, edge_t, weight_t> ec_kernel(e, n, csrPtr_acc, csrInd_acc, dest_ind_acc, weight_j_acc);
+      cgh.parallel_for(cl::sycl::nd_range<1>{ec_global, ec_local}, ec_kernel);
+    });
+    q.wait();
+  
+    weight_t thresh=0.00001;
+    int count=0;
+    auto debug_res = weight_j.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(e));
+    for (edge_t i = 0; i < e; i++) {
+      //std::cout << debug_res[i] << std::endl;
+      if (debug_res[i]>thresh)count++;
     }
-  });
-  //FIXME: Add SYCL asynchronous error checking
-  // CUDA actually had a sync here, force a queue flush
-  q.wait();
-#ifdef DEBUG_2
-//  cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
-  std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
-  {
-//    debug.submit([&](cl::sycl::handler &cgh){
-      auto debug_acc = work.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      for (int i = 0; i < n; i++) {
-        std::cout << debug_acc[i] << std::endl;
+    std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count <<std::endl;
+  
+  } else { //Vertex-Centric
+    //Needs to be 1 for barriers in warp intrinsic emulation
+    size_t y = 1;
+
+    // setup launch configuration
+    //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
+    cl::sycl::range<2> sum_local{y, 32};
+    cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) -1) / sum_local.get(0),(size_t) vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
+
+    // launch kernel
+    cl::sycl::event sum_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
+      if (weighted) {
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
+        Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
+        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+      } else {
+        Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, work_acc, shfl_temp);
+        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
       }
-//    });
-  }
-#endif //DEBUG_2
-  cl::sycl::event fill_event = fill(e, weight_i, weight_t{0.0}, q);
-#ifdef DEBUG_2
-  q.wait();
-  std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
-  {
-//    debug.submit([&](cl::sycl::handler &cgh){
-      auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      for (int i = 0; i < e; i++) {
-        std::cout << debug_acc[i] << std::endl;
-      }
-//    });
-  }
-#endif //DEBUG_2
-
-  //Back to previous value since this doesn't require barriers
-  y = 4;
-
-  // setup launch configuration
-  //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-  //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{8, y, 32/y};
-  cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
-
-  // launch kernel
-  cl::sycl::event is_event = q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
-    if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-      Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
-      cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
-    } else {
-      Jaccard_IsKernel<false, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, work_acc, weight_i_acc, weight_s_acc);
-      cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+    });
+    //FIXME: Add SYCL asynchronous error checking
+    // CUDA actually had a sync here, force a queue flush
+    q.wait();
+  #ifdef DEBUG_2
+  //  cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
+    std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
+    {
+  //    debug.submit([&](cl::sycl::handler &cgh){
+        auto debug_acc = work.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        for (int i = 0; i < n; i++) {
+          std::cout << debug_acc[i] << std::endl;
+        }
+  //    });
     }
-  });
-  //FIXME: Add SYCL asynchronous error checking, no need to flush
-#ifdef DEBUG_2
-  q.wait();
-  std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements" << std::endl;
-  {
-//    debug.submit([&](cl::sycl::handler &cgh){
-      auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      auto debug2_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      for (int i = 0; i < e; i++) {
-        std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
+  #endif //DEBUG_2
+    cl::sycl::event fill_event = fill(e, weight_i, weight_t{0.0}, q);
+  #ifdef DEBUG_2
+    q.wait();
+    std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
+    {
+  //    debug.submit([&](cl::sycl::handler &cgh){
+        auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        for (int i = 0; i < e; i++) {
+          std::cout << debug_acc[i] << std::endl;
+        }
+  //    });
+    }
+  #endif //DEBUG_2
+
+    //Back to previous value since this doesn't require barriers
+    y = 4;
+
+    // setup launch configuration
+    //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
+    //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
+    cl::sycl::range<3> is_local{8, y, 32/y};
+    cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
+
+    // launch kernel
+    //FIXME: Implement in SYCL lamda
+    cl::sycl::event is_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
+      if constexpr (weighted) {
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
+        Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
+        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+      } else {
+        Jaccard_IsKernel<false, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, work_acc, weight_i_acc, weight_s_acc);
+        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
       }
-//    });
-  }
-#endif //DEBUG_2
+    });
+    //FIXME: Add SYCL asynchronous error checking, no need to flush
+  #ifdef DEBUG_2
+    q.wait();
+    std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements" << std::endl;
+    {
+  //    debug.submit([&](cl::sycl::handler &cgh){
+        auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        auto debug2_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        for (int i = 0; i < e; i++) {
+          std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
+        }
+  //    });
+    }
+  #endif //DEBUG_2
 
-  // setup launch configuration
-  cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
-  cl::sycl::range<1> jw_global{std::min((size_t)(e + jw_local.get(0) - 1) / jw_local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
+    // setup launch configuration
+    cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> jw_global{std::min((size_t)(e + jw_local.get(0) - 1) / jw_local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) * jw_local.get(0)};
 
-  // launch kernel
-  cl::sycl::event jw_event = q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
+    // launch kernel
+    cl::sycl::event jw_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
       Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(e, weight_i_acc, weight_s_acc, weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
-  });
-  //FIXME: Add SYCL asynchronous error checking, no need to flush
-#ifdef DEBUG_2
-  q.wait();
-#endif //DEBUG_2
-
-#ifdef EVENT_PROFILE
-  wait_and_print(sum, "RowSum")
-  wait_and_print(fill, "Fill")
-  wait_and_print(is, "Intersection")
-  wait_and_print(jw, "JaccardWeight")
-//  sum_event.wait();
-//  auto sum_end = sum_event.get_profiling_info<cl::sycl::info::event_profiling::command_end>();
-//  auto sum_start = sum_event.get_profiling_info<cl::sycl::info::event_profiling::command_start>();
-//  std::cerr << "RowSum kernel elapsed time: " << (sum_end-start
-#endif //EVENT_PROFILE
+    });
+    //FIXME: Add SYCL asynchronous error checking, no need to flush
+  #ifdef DEBUG_2
+    q.wait();
+  #endif //DEBUG_2
+  
+  #ifdef EVENT_PROFILE
+    wait_and_print(sum, "RowSum")
+    wait_and_print(fill, "Fill")
+    wait_and_print(is, "Intersection")
+    wait_and_print(jw, "JaccardWeight")
+  #endif //EVENT_PROFILE
+  }
   return 0;
 }
 
@@ -556,6 +698,7 @@ int jaccard_pairs(vertex_t n,
                   cl::sycl::buffer<weight_t> &work,
                   cl::sycl::buffer<weight_t> &weight_i,
                   cl::sycl::buffer<weight_t> &weight_s,
+
                   cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
   //Needs to be 1 for barriers in warp intrinsic emulation
@@ -632,15 +775,15 @@ int jaccard_pairs(vertex_t n,
 }
 }  // namespace detail
 
-template <typename VT, typename ET, typename WT>
+template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
 
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> weight_s(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> work(cl::sycl::range<1>(graph.number_of_vertices));
-
-  sygraph::detail::jaccard<true, VT, ET, WT>(graph.number_of_vertices,
+  cl::sycl::buffer<VT> dest_ind(cl::sycl::range<1>(graph.number_of_edges));
+  sygraph::detail::jaccard<edge_centric, true, VT, ET, WT>(graph.number_of_vertices,
                                                graph.number_of_edges,
                                                graph.offsets,
                                                graph.indices,
@@ -648,19 +791,21 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl:
                                                work,
                                                weight_i,
                                                weight_s,
+											   dest_ind,
                                                result,
                                                       q);
   //Buffers autodestruct at end of function scope
 }
 
-template <typename VT, typename ET, typename WT>
+template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
 
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> weight_s(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> work(cl::sycl::range<1>(graph.number_of_vertices));
-  sygraph::detail::jaccard<false, VT, ET, WT>(graph.number_of_vertices,
+  cl::sycl::buffer<VT> dest_ind(cl::sycl::range<1>(graph.number_of_edges));
+  sygraph::detail::jaccard<edge_centric, false, VT, ET, WT>(graph.number_of_vertices,
                                                 graph.number_of_edges,
                                                 graph.offsets,
                                                 graph.indices,
@@ -668,6 +813,7 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::
                                                 work,
                                                 weight_i,
                                                 weight_s,
+												dest_ind,
                                                 result,
                                                       q);
   //Buffers autodestruct at end of function scope
@@ -726,19 +872,29 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
   //Buffers autodestruct at end of function scope
 }
 
-template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                               cl::sycl::buffer<float> &,
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                cl::sycl::buffer<float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
 #ifndef DISABLE_DP_INDEX
-template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                               cl::sycl::buffer<float> &,
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                cl::sycl::buffer<float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
 #endif //DISABLE_DP_INDEX
 #ifndef DISABLE_UNWEIGHTED
-template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
 #ifndef DISABLE_DP_INDEX
-template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                cl::sycl::buffer<float> &, cl::sycl::queue &q);
 #endif //DISABLE_DP_INDEX
 #endif //DISABLE_UNWEIGHTED
@@ -777,19 +933,29 @@ template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_
 #endif //DISABLE_UNWEIGHTED
 #endif //DISABLE_LIST
 #ifndef DISABLE_DP_WEIGHT
-template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                cl::sycl::buffer<double> &,
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                 cl::sycl::buffer<double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
 #ifndef DISABLE_DP_INDEX
-template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                cl::sycl::buffer<double> &,
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                 cl::sycl::buffer<double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
 #endif //DISABLE_DP_INDEX
 #ifndef DISABLE_UNWEIGHTED
-template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
 #ifndef DISABLE_DP_INDEX
-template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                 cl::sycl::buffer<double> &, cl::sycl::queue &q);
 #endif //DISABLE_DP_INDEX
 #endif //DISABLE_UNWEIGHTED

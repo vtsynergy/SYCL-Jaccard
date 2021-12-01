@@ -134,7 +134,7 @@ namespace sygraph {
  * @param[out] result      Device pointer to result values, memory needs to be pre-allocated by
  * caller
  */
-template <typename VT, typename ET, typename WT>
+template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result, cl::sycl::queue &q);
 
 /**
@@ -152,7 +152,7 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl:
  * @param[out] result      Device pointer to result values, memory needs to be pre-allocated by
  * caller
  */
-template <typename VT, typename ET, typename WT>
+template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::sycl::queue &q);
 
 /**
@@ -161,6 +161,7 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::
  * Computes the Jaccard similarity coefficient for each pair of specified vertices.
  * Vertices are specified as pairs where pair[n] = (first[n], second[n])
  *
+ * @tparam edge_centric    Whether to use the edge-centric implementation (true) or vertex-centric (false)
  * @tparam VT              Type of vertex identifiers. Supported value : int (signed, 32-bit)
  * @tparam ET              Type of edge identifiers. Supported value : int (signed, 32-bit)
  * @tparam WT              Type of edge weights. Supported value : float or double.
