@@ -108,12 +108,13 @@ int main(int argc, char * argv[]) {
     #ifdef DEBUG
       std::cerr << "Force Override of Weighted computation, current value is: " << isWeighted << " Override set to: " << weighted_override << std::endl;
     #endif
+    bool hadWeights = isWeighted;
     if (std::strcmp(weighted_override, "1") == 0) isWeighted = true;
     if (std::strcmp(weighted_override, "0") == 0) isWeighted = false;
     //If the graph has null weights vector, we have to provide it something if it's being forced on
-    if (isWeighted && graph->edge_data == nullptr) {
+    if (isWeighted && !hadWeights) {
       std::vector<WEIGHT_TYPE> * forcedWeights = new std::vector<WEIGHT_TYPE>(graph->number_of_edges, WEIGHT_TYPE{1.0});
-      graph->edge_data = forcedWeights->data();
+      graph->edge_data = cl::sycl::buffer<WEIGHT_TYPE>(forcedWeights->data(), graph->number_of_edges);
     }
   }
 
@@ -226,9 +227,6 @@ int main(int argc, char * argv[]) {
     #endif
 
     //Don't need the inputs anymore
-    if (isWeighted) {
-      delete graph->edge_data;
-    }
     delete graph;
     //Set isWeighted to true to retain the scors
     isWeighted = true;
@@ -278,11 +276,6 @@ int main(int argc, char * argv[]) {
     if (gpu_results_mtx != nullptr) {
       delete gpu_results_mtx;
       gpu_results_mtx = nullptr;
-    }
-    delete gpu_graph_results.offsets;
-    delete gpu_graph_results.indices;
-    if (gpu_graph_results.edge_data != nullptr) {
-      delete gpu_graph_results.edge_data;
     }
   } //End Results buffer scope
 }

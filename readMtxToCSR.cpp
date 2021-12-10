@@ -264,35 +264,64 @@ void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZer
                              std::is_same<WT, int64_t>::value
                             }
                           };
-  std::set<std::tuple<ET, VT, WT>> * mtx = nullptr;
+  //Need to explicitly copy back
+  ET * cpu_offsets = new ET[1+csr.number_of_vertices];
+  VT * cpu_indices = new VT[csr.number_of_edges];
+  WT * cpu_edge_data;
+  if (isWeighted) cpu_edge_data = new WT[csr.number_of_edges];
+  { //Buffer scope for copy-back and passing pointer ownership to SYCL
+    //Buffers should use the host pointer, we don't need a 2nd copy and a device copy
+    //cl::sycl::buffer<ET> sycl_offsets(cpu_offsets, 1+csr.number_of_vertices, sycl::property::buffer:use_host_ptr);
+    //cl::sycl::buffer<VT> sycl_indices(cpu_indices, csr.number_of_edges, sycl::property::buffer:use_host_ptr);
+    //cl::sycl::buffer<WT> sycl_edge_data(cpu_edge_data, csr.number_of_edges, sycl::property::buffer:use_host_ptr);
+    cl::sycl::queue q = cl::sycl::queue(cl::sycl::cpu_selector());
+    q.submit([&](cl::sycl::handler &cgh) {
+      auto offsets_acc = csr.offsets.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>(1+csr.number_of_vertices));
+      cgh.copy(offsets_acc, cpu_offsets);
+    });
+    q.submit([&](cl::sycl::handler &cgh) {
+      auto indices_acc = csr.indices.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>(csr.number_of_edges));
+      cgh.copy(indices_acc, cpu_indices);
+    });
+    q.submit([&](cl::sycl::handler &cgh) {
+      auto edge_data_acc = csr.edge_data.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>(csr.number_of_edges));
+      cgh.copy(edge_data_acc, cpu_edge_data);
+    });
+    q.wait();
+  } //End of buffer scope to return pointer ownership to this function
   //Write header
   fileOut.write(reinterpret_cast<char*>(&header), sizeof(CSRFileHeader));
   //Write Vertex Offsets
-  fileOut.write(reinterpret_cast<char*>(csr.offsets), sizeof(ET)*(1+csr.number_of_vertices));
+  fileOut.write(reinterpret_cast<char*>(cpu_offsets), sizeof(ET)*(1+csr.number_of_vertices));
   //Write Neighbor edges
-  fileOut.write(reinterpret_cast<char*>(csr.indices), sizeof(VT)*csr.number_of_edges);
+  fileOut.write(reinterpret_cast<char*>(cpu_indices), sizeof(VT)*csr.number_of_edges);
   //Write Weights (If any)
   if (isWeighted) {
-    fileOut.write(reinterpret_cast<char*>(csr.edge_data), sizeof(WT)*csr.number_of_edges);
+    fileOut.write(reinterpret_cast<char*>(cpu_edge_data), sizeof(WT)*csr.number_of_edges);
+    delete[] cpu_edge_data;
   }
+  delete[] cpu_offsets;
+  delete[] cpu_indices;
 }
 
 template<typename ET, typename VT, typename WT>
 inline GraphCSRView<VT, ET, WT> * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
   //Read Vertex Offsets
-  std::vector<ET> * offsets = new std::vector<ET>(header.numVerts+1);
-  fileIn.read(reinterpret_cast<char*>(offsets->data()),sizeof(ET)* (header.numVerts+1));
+  ET * offsets = new ET[header.numVerts+1];
+  fileIn.read(reinterpret_cast<char*>(offsets),sizeof(ET)* (header.numVerts+1));
   //Read Neighbor Indices
-  std::vector<VT> * indices = new std::vector<VT>(header.numEdges);
-  fileIn.read(reinterpret_cast<char*>(indices->data()),sizeof(VT)* header.numEdges);
+  VT * indices = new VT[header.numEdges];
+  fileIn.read(reinterpret_cast<char*>(indices),sizeof(VT)* header.numEdges);
   //Read Weights (If any)
-  WT * weightsPtr = nullptr;
+  GraphCSRView<VT, ET, WT> * retGraph;
   if (header.flags.isWeighted) {
-    std::vector<WT> * weights = new std::vector<WT>(header.numEdges);
-    fileIn.read(reinterpret_cast<char*>(weights->data()),sizeof(WT)* header.numEdges);
-    weightsPtr = weights->data();
+    WT * weights = new WT[header.numEdges];
+    fileIn.read(reinterpret_cast<char*>(weights),sizeof(WT)* header.numEdges);
+    retGraph = new GraphCSRView<VT, ET, WT>(offsets, indices, weights, header.numVerts, header.numEdges);
+  } else {
+    //Manually construct the buffers so we can give a zero-length one for weights
+    retGraph = new GraphCSRView<VT, ET, WT>(cl::sycl::buffer<ET>(offsets, header.numVerts+1), cl::sycl::buffer<VT>(indices, header.numEdges), cl::sycl::buffer<WT>(0), header.numVerts, header.numEdges);
   }
-  GraphCSRView<VT, ET, WT> * retGraph = new GraphCSRView<VT, ET, WT>(offsets->data(), indices->data(), weightsPtr, header.numVerts, header.numEdges);
   //Construct and return the Graph
   return retGraph; 
 }

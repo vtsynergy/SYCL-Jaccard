@@ -84,19 +84,19 @@ compareCoords: compareCoords.o readMtxToCSR.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
 
 fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
-	g++ -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(LDFLAGS)
+	$(SYCL) -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(SYCL_LD_FLAGS)
 
-jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
+jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o filetypes.o
+	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
-	$(SYCL) $(CFLAGS) -o compareCoords.o -c compareCoords.cpp
+	$(SYCL) -o compareCoords.o -c compareCoords.cpp $(SYCL_C_FLAGS)
 
 fileConvert.o: fileConvert.cpp
-	g++ -o fileConvert.o -c fileConvert.cpp $(CFLAGS) $(OPTS)
+	$(SYCL) -o fileConvert.o -c fileConvert.cpp $(SYCL_C_FLAGS)
 
 filetypes.o: filetypes.cpp
-	g++ -o filetypes.o -c filetypes.cpp $(CFLAGS) $(OPTS)
+	g++ -o filetypes.o -c filetypes.cpp $(CFLAGS)
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE

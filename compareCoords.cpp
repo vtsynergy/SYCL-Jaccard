@@ -42,8 +42,8 @@ int main(int argc, char * argv[]) {
   double tol = atof(argv[3]);
   size_t warnCount = 0;
 
-  std::set<std::tuple<int32_t, int32_t, double>> * goldSet = readCoordFile(gold);
-  std::set<std::tuple<int32_t, int32_t, double>> * testSet = readCoordFile(test);
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * goldSet = readCoordFile(gold);
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * testSet = readCoordFile(test);
   gold.close();
   test.close();
 
@@ -53,8 +53,8 @@ int main(int argc, char * argv[]) {
   }
 
   //Create our two iterators (rather than a loop, so we can advance the lessor on mismatch
-  std::set<std::tuple<int32_t, int32_t, double>>::iterator goldItr = goldSet->begin();
-  std::set<std::tuple<int32_t, int32_t, double>>::iterator testItr = testSet->begin();
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>::iterator goldItr = goldSet->begin();
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>::iterator testItr = testSet->begin();
   while (goldItr != goldSet->end() && testItr != testSet->end()) {
     //If the coordinates match, then test for equality
     if ((std::get<0>(*goldItr) == std::get<0>(*testItr)) && (std::get<1>(*goldItr) == std::get<1>(*testItr))) {

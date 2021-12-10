@@ -88,10 +88,6 @@ int main(int argc, char * argv[]) {
       working = mtx;
       isZeroIndexed = false;
       //Don't need to maintain it as CSR anymore
-      //Free the buffers
-      delete csr_in->offsets;
-      delete csr_in->indices;
-      if (csr_in->edge_data != nullptr) delete csr_in->edge_data;
       delete csr_in;
     }
     std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * reverse = invertDirection(*mtx_in);
@@ -107,10 +103,6 @@ int main(int argc, char * argv[]) {
       working = mtx;
       isZeroIndexed = false;
       //Don't need to maintain it as CSR anymore
-      //Free the buffers
-      delete csr_in->offsets;
-      delete csr_in->indices;
-      if (csr_in->edge_data != nullptr) delete csr_in->edge_data;
       delete csr_in;
     } else if (working != mtx) {
       //Future formats;
@@ -144,10 +136,6 @@ int main(int argc, char * argv[]) {
         working = mtx;
         isZeroIndexed = false;
         //Don't need to maintain it as CSR anymore
-        //Free the buffers
-        delete csr_in->offsets;
-        delete csr_in->indices;
-        if (csr_in->edge_data != nullptr) delete csr_in->edge_data;
         delete csr_in;
       } else if (working != mtx) {
         //Future formats
@@ -163,9 +151,6 @@ int main(int argc, char * argv[]) {
   }
   fileOut.close();
   if (working == csr) { 
-    delete csr_in->offsets;
-    delete csr_in->indices;
-    if (csr_in->edge_data != nullptr) delete csr_in->edge_data;
     delete csr_in;
   }
   if (working == mtx) delete mtx_in;
