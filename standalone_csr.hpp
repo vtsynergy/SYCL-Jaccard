@@ -27,6 +27,13 @@
 #define CUDA_MAX_BLOCKS 65535
 #define CUDA_MAX_KERNEL_THREADS 256
 #define US
+#ifndef WEIGHT_TYPE
+ #ifndef DISABLE_DP_WEIGHT
+  #define WEIGHT_TYPE double
+ #else
+  #define WEIGHT_TYPE float
+ #endif
+#endif
 /**
  * @brief       A graph stored in CSR (Compressed Sparse Row) format.
  *
