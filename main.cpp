@@ -227,6 +227,7 @@ int main(int argc, char * argv[]) {
     #endif
 
     //Don't need the inputs anymore
+    //Need to get the host pointers from the buffers in some way
     delete graph;
     //Set isWeighted to true to retain the scors
     isWeighted = true;
@@ -278,4 +279,5 @@ int main(int argc, char * argv[]) {
       gpu_results_mtx = nullptr;
     }
   } //End Results buffer scope
+  free(gpu_results);
 }

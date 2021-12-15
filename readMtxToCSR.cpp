@@ -141,9 +141,9 @@ void removeReverseEdges(std::set<std::tuple<ET, VT, WT>> &mtx) {
 //FIXME This may break down with directed graphs, specifically if a vertex only has inbound, but not outbound graphs, it won't get an entry in row_bounds (which should have start == end) for such a case)
 template <typename ET, typename VT, typename WT>
 GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> &mtx, bool ignoreSelf, bool isZeroIndexed) {
-  std::vector<WT> * weights = new std::vector<WT>();
-  std::vector<VT> * columns = new std::vector<VT>();
-  std::vector<ET> * row_bounds = new std::vector<ET>({0});
+  std::vector<WT> weights;
+  std::vector<VT> columns;
+  std::vector<ET> row_bounds({0});
   int32_t prev_src = std::get<0>(*(mtx.begin())) - (isZeroIndexed ? 0 : 1);
   //std::set should mean we're iterating over them in sorted order
   for (std::tuple<ET, VT, WT> edge : mtx) {
@@ -155,35 +155,41 @@ GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> &mtx, bo
     std::cout << "Previous source: " << prev_src << std::endl;
 #endif //DEBUG_2
     while (source != prev_src) { // Needs to be a loop to skip empty rows and dropped self-only verts
-      row_bounds->push_back(weights->size()); //Close the previous row's bounds
+      row_bounds.push_back(weights.size()); //Close the previous row's bounds
       ++prev_src;// = source;
     }
     if (source != destination || !ignoreSelf) { // Don't add a self reference
-      weights->push_back(weight);
-      columns->push_back(destination);
+      weights.push_back(weight);
+      columns.push_back(destination);
     }
   }
-  row_bounds->push_back(weights->size()); //Close the final row's bounds
+  row_bounds.push_back(weights.size()); //Close the final row's bounds
 #ifdef DEBUG_2
   std::cout << "Final CSR" << std::endl;
   std::cout << "RowBounds ";
-  for (auto row : *row_bounds) {
+  for (auto row : row_bounds) {
     std::cout << row << ", ";
   }
   std::cout << std::endl;
   std::cout << "Column ";
-  for (auto col : *columns) {
+  for (auto col : columns) {
     std::cout << col << ", ";
   }
   std::cout << std::endl;
   std::cout << "Weights ";
-  for (auto weight : *weights) {
+  for (auto weight : weights) {
     std::cout << weight << ", ";
   }
   std::cout << std::endl;
 #endif //DEBUG_2
-  //The GraphCSRView *does not* maintain it's own copy, just pointers, so they must be dynamically allocated
-  return new GraphCSRView<VT, ET, WT>(row_bounds->data(), columns->data(), weights->data(), row_bounds->size()-1, weights->size());
+  //The GraphCSRView *does not* maintain it's own copy, just pointers, so they must be dynamically allocated and shared to deallocate properly
+  std::shared_ptr<ET> offsets_sp = std::shared_ptr<ET>(new ET[row_bounds.size()]);
+  std::shared_ptr<VT> indices_sp = std::shared_ptr<VT>(new VT[columns.size()]);
+  std::shared_ptr<WT> weights_sp = std::shared_ptr<WT>(new WT[weights.size()]);
+  std::memcpy(offsets_sp.get(), row_bounds.data(), row_bounds.size()*sizeof(ET));
+  std::memcpy(indices_sp.get(), columns.data(), columns.size()*sizeof(VT));
+  std::memcpy(weights_sp.get(), weights.data(), weights.size()*sizeof(WT));
+  return new GraphCSRView<VT, ET, WT>(offsets_sp, indices_sp, weights_sp, row_bounds.size()-1, columns.size());
 }
 
 template <typename ET, typename VT, typename WT>
@@ -307,16 +313,18 @@ void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZer
 template<typename ET, typename VT, typename WT>
 inline GraphCSRView<VT, ET, WT> * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
   //Read Vertex Offsets
-  ET * offsets = new ET[header.numVerts+1];
-  fileIn.read(reinterpret_cast<char*>(offsets),sizeof(ET)* (header.numVerts+1));
+  std::shared_ptr<ET> offsets = std::shared_ptr<ET>(new ET[header.numVerts+1]);
+  fileIn.read(reinterpret_cast<char*>(offsets.get()),sizeof(ET)* (header.numVerts+1));
   //Read Neighbor Indices
-  VT * indices = new VT[header.numEdges];
-  fileIn.read(reinterpret_cast<char*>(indices),sizeof(VT)* header.numEdges);
+  //VT * indices = new VT[header.numEdges];
+  std::shared_ptr<VT> indices = std::shared_ptr<VT>(new VT[header.numEdges]);
+  fileIn.read(reinterpret_cast<char*>(indices.get()),sizeof(VT)* header.numEdges);
   //Read Weights (If any)
   GraphCSRView<VT, ET, WT> * retGraph;
   if (header.flags.isWeighted) {
-    WT * weights = new WT[header.numEdges];
-    fileIn.read(reinterpret_cast<char*>(weights),sizeof(WT)* header.numEdges);
+    std::shared_ptr<WT> weights = std::shared_ptr<WT>(new WT[header.numEdges]);
+    //WT * weights = new WT[header.numEdges];
+    fileIn.read(reinterpret_cast<char*>(weights.get()),sizeof(WT)* header.numEdges);
     retGraph = new GraphCSRView<VT, ET, WT>(offsets, indices, weights, header.numVerts, header.numEdges);
   } else {
     //Manually construct the buffers so we can give a zero-length one for weights

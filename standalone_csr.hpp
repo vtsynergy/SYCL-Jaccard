@@ -90,9 +90,9 @@ class GraphCSRView {
    * @param  number_of_vertices    The number of vertices in the graph
    * @param  number_of_edges       The number of edges in the graph
    */
-  GraphCSRView(edge_t *offsets,
-                                vertex_t *indices,
-                                weight_t *edge_data,
+  GraphCSRView(std::shared_ptr<edge_t> offsets,
+                                std::shared_ptr<vertex_t> indices,
+                                std::shared_ptr<weight_t> edge_data,
                                 vertex_t number_of_vertices,
                                 edge_t number_of_edges)
     : offsets{offsets, number_of_vertices+1},
