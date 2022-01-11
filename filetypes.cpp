@@ -16,15 +16,16 @@
 
 #if __GNUC__ == 7
   #include <experimental/filesystem>
-  namespace std {
-    namespace filesystem = experimental::filesystem;
-  }
+namespace std {
+namespace filesystem = experimental::filesystem;
+}
 #else
   #include <filesystem>
 #endif
 #include "filetypes.hpp"
 
-void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofstream & retOFS, graphFileType & inType, graphFileType & outType) {
+void setUpFiles(char *inFile, char *outFile, std::ifstream &retIFS, std::ofstream &retOFS,
+                graphFileType &inType, graphFileType &outType) {
   std::filesystem::path inPath(inFile);
   std::filesystem::path outPath(outFile);
   if (inPath.extension() == ".mtx") {
@@ -34,7 +35,8 @@ void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofst
     inType = csr;
     retIFS = std::ifstream(inPath, std::ios_base::in | std::ios_base::binary);
   } else {
-    std::cerr << "Input File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
+    std::cerr << "Input File " << inPath
+              << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
     exit(1);
   }
   if (outPath.extension() == ".mtx") {
@@ -42,10 +44,11 @@ void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofst
     retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc);
   } else if (outPath.extension() == ".csr") {
     outType = csr;
-    retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+    retOFS =
+        std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
   } else {
-    std::cerr << "Output File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
+    std::cerr << "Output File " << inPath
+              << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
     exit(2);
   }
 }
-

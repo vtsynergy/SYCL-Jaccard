@@ -16,10 +16,6 @@
 
 #include <fstream>
 #include <iostream>
-typedef enum {
-  mtx,
-  csr,
-  other = -1
-} graphFileType; 
-void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofstream & retOFS, graphFileType & inType, graphFileType & outType);
-
+typedef enum { mtx, csr, other = -1 } graphFileType;
+void setUpFiles(char *inFile, char *outFile, std::ifstream &retIFS, std::ofstream &retOFS,
+                graphFileType &inType, graphFileType &outType);

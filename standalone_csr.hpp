@@ -19,20 +19,20 @@
 
 #ifndef __STANDALONE_CSR_HPP__
 #define __STANDALONE_CSR_HPP__
-//Need this on the old hipSYCL compiler we're using
+// Need this on the old hipSYCL compiler we're using
 #define HIPSYCL_EXT_FP_ATOMICS true
 #include <CL/sycl.hpp>
 
-//From utilities/graph_utils.cuh
+// From utilities/graph_utils.cuh
 #define CUDA_MAX_BLOCKS 65535
 #define CUDA_MAX_KERNEL_THREADS 256
 #define US
 #ifndef WEIGHT_TYPE
- #ifndef DISABLE_DP_WEIGHT
-  #define WEIGHT_TYPE double
- #else
-  #define WEIGHT_TYPE float
- #endif
+  #ifndef DISABLE_DP_WEIGHT
+    #define WEIGHT_TYPE double
+  #else
+    #define WEIGHT_TYPE float
+  #endif
 #endif
 /**
  * @brief       A graph stored in CSR (Compressed Sparse Row) format.
@@ -43,31 +43,26 @@
  */
 template <typename vertex_t, typename edge_t, typename weight_t>
 class GraphCSRView {
- public:
+public:
   using vertex_type = vertex_t;
-  using edge_type   = edge_t;
+  using edge_type = edge_t;
   using weight_type = weight_t;
 
-  cl::sycl::buffer<weight_t> edge_data;  ///< edge weight
-
+  cl::sycl::buffer<weight_t> edge_data; ///< edge weight
 
   vertex_t number_of_vertices;
   edge_t number_of_edges;
-  cl::sycl::buffer<edge_t> offsets{nullptr};    ///< CSR offsets
-  cl::sycl::buffer<vertex_t> indices;  ///< CSR indices
+  cl::sycl::buffer<edge_t> offsets{nullptr}; ///< CSR offsets
+  cl::sycl::buffer<vertex_t> indices;        ///< CSR indices
 
   /**
    * @brief      Default constructor
    */
-  GraphCSRView()
-    : GraphCSRView<vertex_t, edge_t, weight_t>(nullptr, nullptr, nullptr, 0, 0)
-  {
+  GraphCSRView() : GraphCSRView<vertex_t, edge_t, weight_t>(nullptr, nullptr, nullptr, 0, 0) {
   }
   GraphCSRView(weight_t *edge_data, vertex_t number_of_vertices, edge_t number_of_edges)
-    : edge_data(edge_data, number_of_edges),
-      number_of_vertices(number_of_vertices),
-      number_of_edges(number_of_edges)
-  {
+      : edge_data(edge_data, number_of_edges), number_of_vertices(number_of_vertices),
+        number_of_edges(number_of_edges) {
   }
   /**
    * @brief      Wrap existing arrays representing adjacency lists in a Graph.
@@ -90,33 +85,22 @@ class GraphCSRView {
    * @param  number_of_vertices    The number of vertices in the graph
    * @param  number_of_edges       The number of edges in the graph
    */
-  GraphCSRView(std::shared_ptr<edge_t> offsets,
-                                std::shared_ptr<vertex_t> indices,
-                                std::shared_ptr<weight_t> edge_data,
-                                vertex_t number_of_vertices,
-                                edge_t number_of_edges)
-    : offsets{offsets, number_of_vertices+1},
-      indices{indices, number_of_edges},
-      edge_data(edge_data, number_of_edges),
-      number_of_vertices(number_of_vertices),
-      number_of_edges(number_of_edges)
-  {
+  GraphCSRView(std::shared_ptr<edge_t> offsets, std::shared_ptr<vertex_t> indices,
+               std::shared_ptr<weight_t> edge_data, vertex_t number_of_vertices,
+               edge_t number_of_edges)
+      : offsets{offsets, number_of_vertices + 1}, indices{indices, number_of_edges},
+        edge_data(edge_data, number_of_edges), number_of_vertices(number_of_vertices),
+        number_of_edges(number_of_edges) {
   }
 
   /**
-  * @brief Use copy constructors to re-reference existing SYCL buffers
-  */
-  GraphCSRView(cl::sycl::buffer<edge_t> offsets,
-                                cl::sycl::buffer<vertex_t> indices,
-                                cl::sycl::buffer<weight_t> edge_data,
-                                vertex_t number_of_vertices,
-                                edge_t number_of_edges)
-    : offsets{offsets},
-      indices{indices},
-      edge_data(edge_data),
-      number_of_vertices(number_of_vertices),
-      number_of_edges(number_of_edges)
-  {
+   * @brief Use copy constructors to re-reference existing SYCL buffers
+   */
+  GraphCSRView(cl::sycl::buffer<edge_t> offsets, cl::sycl::buffer<vertex_t> indices,
+               cl::sycl::buffer<weight_t> edge_data, vertex_t number_of_vertices,
+               edge_t number_of_edges)
+      : offsets{offsets}, indices{indices}, edge_data(edge_data),
+        number_of_vertices(number_of_vertices), number_of_edges(number_of_edges) {
   }
 };
 
