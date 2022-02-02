@@ -84,7 +84,13 @@ int main(int argc, char *argv[]) {
                 << std::endl;
       keepReverseEdges = false;
     }
+    char *force_ec = std::getenv("CONVERT_FORCE_REVERSE");
+    if (force_ec != nullptr) {
+      std::cerr << "FORCE Reverse Edge Generation" << std::endl;
+      keepReverseEdges = true;
+    }
   }
+
   // Generate reverse edges if we need to, remove them if we need to
   if (keepReverseEdges && !hasReverseEdges) {
     // Generate them
@@ -99,7 +105,7 @@ int main(int argc, char *argv[]) {
     std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *reverse = invertDirection(*mtx_in);
     mtx_in->insert(reverse->begin(), reverse->end());
     hasReverseEdges = true;
-    numEdges *= 2;
+    numEdges = mtx_in->size();
     delete reverse;
   } else if (hasReverseEdges && !keepReverseEdges) {
     // Remove them
@@ -115,7 +121,7 @@ int main(int argc, char *argv[]) {
     }
     removeReverseEdges(*mtx_in);
     hasReverseEdges = false;
-    numEdges /= 2;
+    numEdges = mtx_in->size();
   }
   // And write it
   switch (outType) {
