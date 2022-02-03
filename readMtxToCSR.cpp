@@ -48,7 +48,7 @@ std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
                                                bool *isDirected, int64_t *numVerts,
-                                               int64_t *numEdges) {
+                                               int64_t *numEdges, bool dropWeights) {
   std::set<std::tuple<ET, VT, WT>> *ret_edges = new std::set<std::tuple<ET, VT, WT>>();
   std::vector<std::tuple<ET, VT, WT>> *tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   // TODO This should really do all the header parsing here, rather than relying on the caller to do
@@ -99,7 +99,7 @@ std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasW
 
   // Keep reading data lines to EOF
   do {
-    std::tuple<ET, VT, WT> line = readCoord<ET, VT, WT>(fileIn, *hasWeights);
+    std::tuple<ET, VT, WT> line = readCoord<ET, VT, WT>(fileIn, (*hasWeights && !dropWeights));
     if (!(fileIn.bad() || fileIn.fail() || fileIn.eof())) {
 #ifdef DEBUG_2
       std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " "
@@ -398,7 +398,7 @@ template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &file
                                                              bool isWeighted);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *
 fileToMTXSet(std::ifstream &fileIn, bool *hasWeights, bool *isDirected, int64_t *numVerts,
-             int64_t *numEdges);
+             int64_t *numEdges, bool dropWeights);
 template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *
 mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, bool ignoreSelf,
             bool isZeroIndexed);

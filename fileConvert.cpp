@@ -36,8 +36,13 @@ int main(int argc, char *argv[]) {
   graphFileType inType, outType, working;
   setUpFiles(argv[1], argv[2], fileIn, fileOut, inType, outType);
   bool keepReverseEdges = static_cast<bool>(atoi(argv[3]));
-  bool isWeighted = false, isDirected = false, hasReverseEdges = false, isZeroIndexed = false;
+  bool isWeighted = false, isDirected = false, hasReverseEdges = false, isZeroIndexed = false, dropWeights = false;
   int64_t numVerts = 0, numEdges = 0;
+  char *force_dw = std::getenv("CONVERT_FORCE_DROP_WEIGHTS");
+  if (force_dw != nullptr) {
+    std::cerr << "FORCE Drop Weights" << std::endl;
+    dropWeights = true;
+  }
   std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *mtx_in = nullptr;
   GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *csr_in = nullptr;
   // Fetch the input
@@ -46,7 +51,8 @@ int main(int argc, char *argv[]) {
       working = mtx;
       // Header information comes with the MTX reader
       mtx_in = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted, &isDirected,
-                                                           &numVerts, &numEdges);
+                                                           &numVerts, &numEdges, dropWeights);
+      if (dropWeights) isWeighted=false;
       // By spec, MTX doesn't typically have reverse edges (It would have to be in general form,
       // which we couldn't distinguish from a regular directed graph without exhaustively checking
       // all the edge pairs)

@@ -25,7 +25,7 @@ std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
                                                bool *isDirected, int64_t *numVerts = nullptr,
-                                               int64_t *numEdges = nullptr);
+                                               int64_t *numEdges = nullptr, bool dropWeights = true);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *invertDirection(std::set<std::tuple<ET, VT, WT>> &mtx);
 template <typename ET, typename VT, typename WT>
