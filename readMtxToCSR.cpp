@@ -34,10 +34,11 @@ auto mtx_less = [](const std::tuple<ET, VT, WT> first, const std::tuple<ET, VT, 
 // FIXME Producing a weight vector that we're not going to use inflates memory O(edges)
 // unnecessarily
 template <typename ET, typename VT, typename WT>
-std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
+std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted, bool dropWeights) {
   std::tuple<ET, VT, WT> line;
   if (isWeighted) {
     fileIn >> std::get<0>(line) >> std::get<1>(line) >> std::get<2>(line);
+    if (dropWeights) std::get<2>(line) = (WT)1.0;
   } else {
     fileIn >> std::get<0>(line) >> std::get<1>(line);
     std::get<2>(line) = (WT)1.0;
@@ -99,7 +100,7 @@ std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasW
 
   // Keep reading data lines to EOF
   do {
-    std::tuple<ET, VT, WT> line = readCoord<ET, VT, WT>(fileIn, (*hasWeights && !dropWeights));
+    std::tuple<ET, VT, WT> line = readCoord<ET, VT, WT>(fileIn, *hasWeights, dropWeights);
     if (!(fileIn.bad() || fileIn.fail() || fileIn.eof())) {
 #ifdef DEBUG_2
       std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " "
@@ -395,7 +396,7 @@ void *FileToCSR(std::ifstream &fileIn, CSRFileHeader *header) {
 
 // Explicit instantiations since separately compiling and linking
 template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn,
-                                                             bool isWeighted);
+                                                             bool isWeighted, bool dropWeights);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *
 fileToMTXSet(std::ifstream &fileIn, bool *hasWeights, bool *isDirected, int32_t *numVerts,
              int32_t *numEdges, bool dropWeights);

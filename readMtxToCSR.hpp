@@ -21,7 +21,7 @@
 #define CSR_BINARY_FORMAT_VERSION 1
 
 template <typename ET, typename VT, typename WT>
-std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true);
+std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true, bool dropWeights = false);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
                                                bool *isDirected, VT *numVerts = nullptr,
