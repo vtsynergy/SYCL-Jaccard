@@ -36,11 +36,16 @@ int main(int argc, char *argv[]) {
   fileIn.read(reinterpret_cast<char *>(&header), sizeof(CSRFileHeader));
   std::cout << "==================================" << std::endl;
   std::cout << "Header info from " << argv[1] << std::endl;
+  std::cout << "Format: " << header.binaryFormatVersion << " Intepreted as: " << CSR_BINARY_FORMAT_VERSION << std::endl;
   std::cout << "==================================" << std::endl;
   std::cout << "isWeighted " << header.flags.isWeighted << std::endl;
-  std::cout << "isDirected " << header.flags.isDirected << std::endl;
   std::cout << "isZeroIndexed " << header.flags.isZeroIndexed << std::endl;
+  std::cout << "isDirected " << header.flags.isDirected << std::endl;
   std::cout << "hasReverseEdges " << header.flags.hasReverseEdges << std::endl;
+  std::cout << "isVertexT64 " << header.flags.isVertexT64 << std::endl;
+  std::cout << "isEdgeT64 " << header.flags.isEdgeT64 << std::endl;
+  std::cout << "isWeightT64 " << header.flags.isWeightT64 << std::endl;
+  std::cout << "zeroPad " << header.flags.zeroPad << std::endl;
   std::cout << "Vertices " << header.numVerts << std::endl;
   std::cout << "Edges " << header.numEdges << std::endl;
   fileIn.close();

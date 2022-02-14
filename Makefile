@@ -21,9 +21,17 @@ else ifeq ($(DEBUG), 2)
 else
   OPTS=-O3
 endif
+GCCVERSION := $(shell g++ -dumpversion)
+ifeq ($(shell test $(GCCVERSION) -gt 9; echo $$?),0)
+CFLAGS := $(CFLAGS) --std=c++20
+LDFLAGS := $(LDFLAGS) --std=c++20 -lstdc++fs
+else
+CFLAGS := $(CFLAGS) --std=c++2a
+LDFLAGS := $(LDFLAGS) --std=c++2a -lstdc++fs
+endif
 
-CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX --std=c++17 $(OPTS)
-LDFLAGS := $(LDFLAGS) --std=c++17
+CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX $(OPTS)
+LDFLAGS := $(LDFLAGS)
 ifneq ($(NO_LIBSTDFS),1)
   SYCL_LD_FLAGS :=  $(SYCL_LD_FLAGS) -lstdc++fs
 endif
@@ -90,7 +98,7 @@ jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o filetypes.o
 	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 readCSRHeader: readCSRHeader.o readMtxToCSR.o
-	g++ -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(LDFLAGS)
+	$(SYCL) -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) -o compareCoords.o -c compareCoords.cpp $(SYCL_C_FLAGS)
@@ -108,7 +116,7 @@ main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
 
 readCSRHeader.o: readCSRHeader.cpp
-	g++ -o readCSRHeader.o -c readCSRHeader.cpp $(CFLAGS)
+	$(SYCL) -o readCSRHeader.o -c readCSRHeader.cpp $(SYCL_C_FLAGS)
 
 readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
