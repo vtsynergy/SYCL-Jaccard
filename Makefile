@@ -107,7 +107,7 @@ fileConvert.o: fileConvert.cpp
 	$(SYCL) -o fileConvert.o -c fileConvert.cpp $(SYCL_C_FLAGS)
 
 filetypes.o: filetypes.cpp
-	g++ -o filetypes.o -c filetypes.cpp $(CFLAGS)
+	$(SYCL) -o filetypes.o -c filetypes.cpp $(SYCL_C_FLAGS)
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
