@@ -538,7 +538,9 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       cgh.parallel_for(cl::sycl::nd_range<1>{scan_global, scan_local}, escan_kernel);
     });
 
+#ifdef DEBUG_2
     q.wait();
+#endif // DEBUG_2
 
     cl::sycl::range<1> ec_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
     cl::sycl::range<1> ec_global{std::min((size_t)(e + ec_local.get(0) - 1) / ec_local.get(0),
@@ -563,7 +565,9 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
           e, n, csrPtr_acc, csrInd_acc, dest_ind_acc, weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{ec_global, ec_local}, ec_kernel);
     });
+#ifdef DEBUG_2
     q.wait();
+#endif // DEBUG_2
 
     weight_t thresh = 0.00001;
     int count = 0;
@@ -574,6 +578,9 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       if (debug_res[i] > thresh) count++;
     }
     std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count << std::endl;
+#ifdef EVENT_PROFILE
+    wait_and_print(scan, "ECScan") wait_and_print(edgec, "ECUnweighted")
+#endif // EVENT_PROFILE
 
   } else { // Vertex-Centric
     // Needs to be 1 for barriers in warp intrinsic emulation
@@ -733,8 +740,8 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
 #endif // DEBUG_2
 
 #ifdef EVENT_PROFILE
-    wait_and_print(sum, "RowSum") wait_and_print(fill, "Fill") wait_and_print(is, "Intersection")
-        wait_and_print(jw, "JaccardWeight")
+    wait_and_print(sum, "VCRowSum") wait_and_print(fill, "VCFill")
+        wait_and_print(is, "VCIntersection") wait_and_print(jw, "VCJaccardWeight")
 #endif // EVENT_PROFILE
   }
   return 0;
