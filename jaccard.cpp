@@ -78,17 +78,20 @@ cl::sycl::event fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue 
   size_t block = std::min((size_t)n, (size_t)CUDA_MAX_KERNEL_THREADS);
   size_t grid = std::min((size_t)(n / block) + ((n % block) ? 1 : 0), (size_t)CUDA_MAX_BLOCKS);
   // TODO, do we need to emulate their stream behavior?
-  cl::sycl::event ret_event = q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> x_acc =
-        x.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>(n));
-    FillKernel fill_kern(x_acc, value, n);
-    cgh.parallel_for(
-        cl::sycl::nd_range<1>{cl::sycl::range<1>{grid * block}, cl::sycl::range<1>{block}},
-        fill_kern);
-  });
-
+  cl::sycl::event ret_event;
+  try {
+    ret_event = q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> x_acc =
+          x.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>(n));
+      FillKernel fill_kern(x_acc, value, n);
+      cgh.parallel_for(
+          cl::sycl::nd_range<1>{cl::sycl::range<1>{grid * block}, cl::sycl::range<1>{block}},
+          fill_kern);
+    });
+  } catch (sycl::exception e) {
+    std::cerr << "SYCL Exception during Fill enqueue\n\t" << e.what() << std::endl;
+  }
   return ret_event;
-  // FIXME: Add SYCL asynchronous error check, but no need to flush the queue here
 }
 
   #ifdef EMULATE_ATOMIC_ADD_FLOAT
@@ -522,52 +525,62 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
                                             (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                    scan_local.get(0)};
 
+    cl::sycl::event scan_event;
     // Scan kernel to set up adjacency list
-    cl::sycl::event scan_event = q.submit([&](cl::sycl::handler &cgh) {
-      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-          csrPtr.template get_access<cl::sycl::access::mode::read>(
-              cgh, cl::sycl::range<1>{(size_t)n + 1});
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind_acc =
-          dest_ind.template get_access<cl::sycl::access::mode::read_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
-          weight_j.template get_access<cl::sycl::access::mode::read_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      Jaccard_ec_scan<weighted, vertex_t, edge_t, weight_t> escan_kernel(
-          e, n, csrPtr_acc, dest_ind_acc, weight_j_acc);
-      cgh.parallel_for(cl::sycl::nd_range<1>{scan_global, scan_local}, escan_kernel);
-    });
+    try {
+      scan_event = q.submit([&](cl::sycl::handler &cgh) {
+        cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+            csrPtr.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)n + 1});
+        cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind_acc =
+            dest_ind.template get_access<cl::sycl::access::mode::read_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
+            weight_j.template get_access<cl::sycl::access::mode::read_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        Jaccard_ec_scan<weighted, vertex_t, edge_t, weight_t> escan_kernel(
+            e, n, csrPtr_acc, dest_ind_acc, weight_j_acc);
+        cgh.parallel_for(cl::sycl::nd_range<1>{scan_global, scan_local}, escan_kernel);
+      });
 
 #ifdef DEBUG_2
-    q.wait();
+      q.wait();
 #endif // DEBUG_2
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during EC-Scan enqueue\n\t" << e.what() << std::endl;
+    }
 
     cl::sycl::range<1> ec_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
     cl::sycl::range<1> ec_global{std::min((size_t)(e + ec_local.get(0) - 1) / ec_local.get(0),
                                           (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                  ec_local.get(0)};
 
-    // Edge-centric kernel
-    cl::sycl::event edgec_event = q.submit([&](cl::sycl::handler &cgh) {
-      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-          csrPtr.template get_access<cl::sycl::access::mode::read>(
-              cgh, cl::sycl::range<1>{(size_t)n + 1});
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-          csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                   cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind_acc =
-          dest_ind.template get_access<cl::sycl::access::mode::read>(cgh,
+    cl::sycl::event edgec_event;
+    try {
+      // Edge-centric kernel
+      edgec_event = q.submit([&](cl::sycl::handler &cgh) {
+        cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+            csrPtr.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)n + 1});
+        cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+            csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
                                                                      cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
-          weight_j.template get_access<cl::sycl::access::mode::read_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      Jaccard_ec_unweighted<weighted, vertex_t, edge_t, weight_t> ec_kernel(
-          e, n, csrPtr_acc, csrInd_acc, dest_ind_acc, weight_j_acc);
-      cgh.parallel_for(cl::sycl::nd_range<1>{ec_global, ec_local}, ec_kernel);
-    });
+        cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind_acc =
+            dest_ind.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
+            weight_j.template get_access<cl::sycl::access::mode::read_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        Jaccard_ec_unweighted<weighted, vertex_t, edge_t, weight_t> ec_kernel(
+            e, n, csrPtr_acc, csrInd_acc, dest_ind_acc, weight_j_acc);
+        cgh.parallel_for(cl::sycl::nd_range<1>{ec_global, ec_local}, ec_kernel);
+      });
 #ifdef DEBUG_2
-    q.wait();
+      q.wait();
 #endif // DEBUG_2
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during EC-unweighted enqueue\n\t" << e.what() << std::endl;
+    }
 
     weight_t thresh = 0.00001;
     int count = 0;
@@ -579,7 +592,16 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     }
     std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count << std::endl;
 #ifdef EVENT_PROFILE
-    wait_and_print(scan, "ECScan") wait_and_print(edgec, "ECUnweighted")
+    try {
+      wait_and_print(scan, "ECScan")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for EC-scan\n\t" << e.what() << std::endl;
+    }
+    try {
+      wait_and_print(edgec, "ECUnweighted")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for EC-unweighted\n\t" << e.what() << std::endl;
+    }
 #endif // EVENT_PROFILE
 
   } else { // Vertex-Centric
@@ -594,36 +616,40 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
                                       sum_local.get(0),
                                   sum_local.get(1)};
 
-    // launch kernel
-    cl::sycl::event sum_event = q.submit([&](cl::sycl::handler &cgh) {
-      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-          csrPtr.template get_access<cl::sycl::access::mode::read>(
-              cgh, cl::sycl::range<1>{(size_t)n + 1});
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-          csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                   cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc =
-          work.template get_access<cl::sycl::access::mode::discard_write>(
-              cgh, cl::sycl::range<1>{(size_t)n});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
-                         cl::sycl::access::target::local>
-          shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
-      if (weighted) {
-        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
-            weight_in->template get_access<cl::sycl::access::mode::read>(
+    cl::sycl::event sum_event;
+    try {
+      // launch kernel
+      sum_event = q.submit([&](cl::sycl::handler &cgh) {
+        cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+            csrPtr.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)n + 1});
+        cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+            csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
+                                                                     cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc =
+            work.template get_access<cl::sycl::access::mode::discard_write>(
                 cgh, cl::sycl::range<1>{(size_t)n});
-        Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(
-            n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
-        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
-      } else {
-        Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(
-            n, csrPtr_acc, csrInd_acc, work_acc, shfl_temp);
-        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
-      }
-    });
-    // FIXME: Add SYCL asynchronous error checking
-    // CUDA actually had a sync here, force a queue flush
-    q.wait();
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                           cl::sycl::access::target::local>
+            shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
+        if constexpr (weighted) {
+          cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
+              weight_in->template get_access<cl::sycl::access::mode::read>(
+                  cgh, cl::sycl::range<1>{(size_t)n});
+          Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(
+              n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
+          cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+        } else {
+          Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(
+              n, csrPtr_acc, csrInd_acc, work_acc, shfl_temp);
+          cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+        }
+      });
+      // CUDA actually had a sync here, force a queue flush
+      q.wait();
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during VC RowSum\n\t" << e.what() << std::endl;
+    }
 #ifdef DEBUG_2
     //  cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
     std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
@@ -637,20 +663,25 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       //    });
     }
 #endif // DEBUG_2
-    cl::sycl::event fill_event = fill(e, weight_i, weight_t{0.0}, q);
+    cl::sycl::event fill_event;
+    try {
+      fill_event = fill(e, weight_i, weight_t{0.0}, q);
 #ifdef DEBUG_2
-    q.wait();
-    std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
-    {
-      //    debug.submit([&](cl::sycl::handler &cgh){
-      auto debug_acc =
-          weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      for (int i = 0; i < e; i++) {
-        std::cout << debug_acc[i] << std::endl;
+      q.wait();
+      std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
+      {
+        //    debug.submit([&](cl::sycl::handler &cgh){
+        auto debug_acc =
+            weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        for (int i = 0; i < e; i++) {
+          std::cout << debug_acc[i] << std::endl;
+        }
+        //    });
       }
-      //    });
-    }
 #endif // DEBUG_2
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during VC Fill\n\t" << e.what() << std::endl;
+    }
 
     // Back to previous value since this doesn't require barriers
     y = 4;
@@ -664,54 +695,57 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
                                      is_local.get(0),
                                  1 * is_local.get(1), 1 * is_local.get(2)};
 
-    // launch kernel
-    // FIXME: Implement in SYCL lamda
-    cl::sycl::event is_event = q.submit([&](cl::sycl::handler &cgh) {
-      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-          csrPtr.template get_access<cl::sycl::access::mode::read>(
-              cgh, cl::sycl::range<1>{(size_t)n + 1});
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-          csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                   cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc =
-          work.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                 cl::sycl::range<1>{(size_t)n});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc =
-          weight_i.template get_access<cl::sycl::access::mode::read_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc =
-          weight_s.template get_access<cl::sycl::access::mode::discard_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      if constexpr (weighted) {
-        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
-            weight_in->template get_access<cl::sycl::access::mode::read>(
-                cgh, cl::sycl::range<1>{(size_t)n});
-        Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(
-            n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
-        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
-      } else {
-        Jaccard_IsKernel<false, vertex_t, edge_t, weight_t> is_kernel(
-            n, csrPtr_acc, csrInd_acc, work_acc, weight_i_acc, weight_s_acc);
-        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
-      }
-    });
-// FIXME: Add SYCL asynchronous error checking, no need to flush
+    cl::sycl::event is_event;
+    try {
+      // launch kernel
+      is_event = q.submit([&](cl::sycl::handler &cgh) {
+        cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+            csrPtr.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)n + 1});
+        cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+            csrInd.template get_access<cl::sycl::access::mode::read>(cgh,
+                                                                     cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc =
+            work.template get_access<cl::sycl::access::mode::read>(cgh,
+                                                                   cl::sycl::range<1>{(size_t)n});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc =
+            weight_i.template get_access<cl::sycl::access::mode::read_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc =
+            weight_s.template get_access<cl::sycl::access::mode::discard_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        if constexpr (weighted) {
+          cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
+              weight_in->template get_access<cl::sycl::access::mode::read>(
+                  cgh, cl::sycl::range<1>{(size_t)n});
+          Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(
+              n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
+          cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+        } else {
+          Jaccard_IsKernel<false, vertex_t, edge_t, weight_t> is_kernel(
+              n, csrPtr_acc, csrInd_acc, work_acc, weight_i_acc, weight_s_acc);
+          cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+        }
+      });
 #ifdef DEBUG_2
-    q.wait();
-    std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements"
-              << std::endl;
-    {
-      //    debug.submit([&](cl::sycl::handler &cgh){
-      auto debug_acc =
-          weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      auto debug2_acc =
-          weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
-      for (int i = 0; i < e; i++) {
-        std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
+      q.wait();
+      std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements"
+                << std::endl;
+      {
+        //    debug.submit([&](cl::sycl::handler &cgh){
+        auto debug_acc =
+            weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        auto debug2_acc =
+            weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+        for (int i = 0; i < e; i++) {
+          std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
+        }
+        //    });
       }
-      //    });
-    }
 #endif // DEBUG_2
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during VC Intersection\n\t" << e.what() << std::endl;
+    }
 
     // setup launch configuration
     cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
@@ -719,29 +753,51 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
                                           (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                  jw_local.get(0)};
 
-    // launch kernel
-    cl::sycl::event jw_event = q.submit([&](cl::sycl::handler &cgh) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc =
-          weight_i.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                     cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc =
-          weight_s.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                     cl::sycl::range<1>{(size_t)e});
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
-          weight_j.template get_access<cl::sycl::access::mode::discard_write>(
-              cgh, cl::sycl::range<1>{(size_t)e});
-      Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(e, weight_i_acc,
-                                                                       weight_s_acc, weight_j_acc);
-      cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
-    });
-    // FIXME: Add SYCL asynchronous error checking, no need to flush
+    cl::sycl::event jw_event;
+    try {
+      // launch kernel
+      jw_event = q.submit([&](cl::sycl::handler &cgh) {
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc =
+            weight_i.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc =
+            weight_s.template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
+            weight_j.template get_access<cl::sycl::access::mode::discard_write>(
+                cgh, cl::sycl::range<1>{(size_t)e});
+        Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(
+            e, weight_i_acc, weight_s_acc, weight_j_acc);
+        cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
+      });
 #ifdef DEBUG_2
-    q.wait();
+      q.wait();
 #endif // DEBUG_2
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception during VC Weights\n\t" << e.what() << std::endl;
+    }
 
 #ifdef EVENT_PROFILE
-    wait_and_print(sum, "VCRowSum") wait_and_print(fill, "VCFill")
-        wait_and_print(is, "VCIntersection") wait_and_print(jw, "VCJaccardWeight")
+    try {
+      wait_and_print(sum, "VCRowSum")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for VC RowSum\n\t" << e.what() << std::endl;
+    }
+    try {
+      wait_and_print(fill, "VCFill")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for VC Fill\n\t" << e.what() << std::endl;
+    }
+    try {
+      wait_and_print(is, "VCIntersection")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for VC Intersection\n\t" << e.what() << std::endl;
+    }
+    try {
+      wait_and_print(jw, "VCJaccardWeight")
+    } catch (sycl::exception e) {
+      std::cerr << "SYCL Exception while waiting for VC Weights\n\t" << e.what() << std::endl;
+    }
 #endif // EVENT_PROFILE
   }
   return 0;
@@ -766,34 +822,37 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
                                 sum_local.get(1)};
 
   // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-        csrPtr.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                 cl::sycl::range<1>{(size_t)n + 1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-        csrInd.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc =
-        work.template get_access<cl::sycl::access::mode::discard_write>(
-            cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
-                       cl::sycl::access::target::local>
-        shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
-    if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
-          weight_in->template get_access<cl::sycl::access::mode::read>(
+  try {
+    q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+          csrPtr.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)n + 1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+          csrInd.template get_access<cl::sycl::access::mode::read>(
               cgh, cl::sycl::range<1>{(size_t)num_pairs});
-      Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(
-          n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
-      cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
-    } else {
-      Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc,
-                                                                         work_acc, shfl_temp);
-      cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
-    }
-  });
-  // FIXME: Add SYCL asynchronous error checking
-  q.wait();
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc =
+          work.template get_access<cl::sycl::access::mode::discard_write>(
+              cgh, cl::sycl::range<1>{(size_t)n});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                         cl::sycl::access::target::local>
+          shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
+      if constexpr (weighted) {
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
+            weight_in->template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)num_pairs});
+        Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(
+            n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
+        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+      } else {
+        Jaccard_RowSumKernel<false, vertex_t, edge_t, weight_t> sum_kernel(
+            n, csrPtr_acc, csrInd_acc, work_acc, shfl_temp);
+        cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
+      }
+    });
+    q.wait();
+  } catch (sycl::exception e) {
+    std::cerr << "SYCL Exception during VC RowSum\n\t" << e.what() << std::endl;
+  }
 
   // NOTE: initilized weight_i vector with 0.0
   // fill(num_pairs, weight_i, weight_t{0.0}, q);
@@ -809,44 +868,48 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
                                    is_local.get(0),
                                1 * is_local.get(1), 1 * is_local.get(2)};
 
-  // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-        csrPtr.template get_access<cl::sycl::access::mode::read>(cgh,
-                                                                 cl::sycl::range<1>{(size_t)n + 1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-        csrInd.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair_acc =
-        first_pair.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair_acc =
-        second_pair.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc =
-        work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc =
-        weight_i.template get_access<cl::sycl::access::mode::read_write>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc =
-        weight_s.template get_access<cl::sycl::access::mode::discard_write>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
-          weight_in->template get_access<cl::sycl::access::mode::read>(
+  try {
+    // launch kernel
+    q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+          csrPtr.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)n + 1});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+          csrInd.template get_access<cl::sycl::access::mode::read>(
               cgh, cl::sycl::range<1>{(size_t)num_pairs});
-      Jaccard_IsPairsKernel<true, vertex_t, edge_t, weight_t> is_kernel(
-          num_pairs, csrPtr_acc, csrInd_acc, first_pair_acc, second_pair_acc, weight_in_acc,
-          work_acc, weight_i_acc, weight_s_acc);
-      cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
-    } else {
-      Jaccard_IsPairsKernel<false, vertex_t, edge_t, weight_t> is_kernel(
-          num_pairs, csrPtr_acc, csrInd_acc, first_pair_acc, second_pair_acc, work_acc,
-          weight_i_acc, weight_s_acc);
-      cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
-    }
-  });
-  // FIXME: Add SYCL asynchronous error checking, no need to flush
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair_acc =
+          first_pair.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair_acc =
+          second_pair.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc =
+          work.template get_access<cl::sycl::access::mode::read>(cgh,
+                                                                 cl::sycl::range<1>{(size_t)n});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc =
+          weight_i.template get_access<cl::sycl::access::mode::read_write>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc =
+          weight_s.template get_access<cl::sycl::access::mode::discard_write>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      if constexpr (weighted) {
+        cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc =
+            weight_in->template get_access<cl::sycl::access::mode::read>(
+                cgh, cl::sycl::range<1>{(size_t)num_pairs});
+        Jaccard_IsPairsKernel<true, vertex_t, edge_t, weight_t> is_kernel(
+            num_pairs, csrPtr_acc, csrInd_acc, first_pair_acc, second_pair_acc, weight_in_acc,
+            work_acc, weight_i_acc, weight_s_acc);
+        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+      } else {
+        Jaccard_IsPairsKernel<false, vertex_t, edge_t, weight_t> is_kernel(
+            num_pairs, csrPtr_acc, csrInd_acc, first_pair_acc, second_pair_acc, work_acc,
+            weight_i_acc, weight_s_acc);
+        cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
+      }
+    });
+  } catch (sycl::exception e) {
+    std::cerr << "SYCL Exception during VC IsPairs\n\t" << e.what() << std::endl;
+  }
 
   // setup launch configuration
   cl::sycl::range<1> jw_local{std::min((size_t)num_pairs, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
@@ -854,22 +917,25 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
                                         (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                jw_local.get(0)};
 
-  // launch kernel
-  q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc =
-        weight_i.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc =
-        weight_s.template get_access<cl::sycl::access::mode::read>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
-        weight_j.template get_access<cl::sycl::access::mode::discard_write>(
-            cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(num_pairs, weight_i_acc,
-                                                                     weight_s_acc, weight_j_acc);
-    cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
-  });
-  // FIXME: Add SYCL asynchronous error checking, no need to flush
+  try {
+    // launch kernel
+    q.submit([&](cl::sycl::handler &cgh) {
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc =
+          weight_i.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc =
+          weight_s.template get_access<cl::sycl::access::mode::read>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
+          weight_j.template get_access<cl::sycl::access::mode::discard_write>(
+              cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(num_pairs, weight_i_acc,
+                                                                       weight_s_acc, weight_j_acc);
+      cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
+    });
+  } catch (sycl::exception e) {
+    std::cerr << "SYCL Exception during VC Weights\n\t" << e.what() << std::endl;
+  }
 
   return 0;
 }

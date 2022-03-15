@@ -18,6 +18,7 @@
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"
+#include "sycl_exceptions.hpp"
 #include <CL/sycl.hpp>
 #include <cstring>
 #include <iostream>
@@ -153,9 +154,10 @@ int main(int argc, char *argv[]) {
 
   // Go ahead and iterate over the SYCL devices and pick one if they've specified a device number
 #ifdef EVENT_PROFILE
-  cl::sycl::queue q{cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()}};
+  cl::sycl::queue q{sycl_exception_handler,
+                    cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()}};
 #else
-  cl::sycl::queue q;
+  cl::sycl::queue q{sycl_exception_handler};
 #endif
   std::vector<cl::sycl::device> all_devices;
   if (argc >= 4) {
@@ -170,9 +172,10 @@ int main(int argc, char *argv[]) {
         if (count == atoi(argv[3])) {
 #ifdef EVENT_PROFILE
           q = cl::sycl::queue{
-              dev, cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()}};
+              dev, sycl_exception_handler,
+              cl::sycl::property_list{cl::sycl::property::queue::enable_profiling()}};
 #else
-          q = cl::sycl::queue{dev};
+          q = cl::sycl::queue{dev, sycl_exception_handler};
 #endif
         }
         ++count;
@@ -206,26 +209,33 @@ int main(int argc, char *argv[]) {
         // Create the pseudo csrInd buffer
         cl::sycl::buffer<int32_t> presumInd(graph->number_of_edges);
         // populate the pseudo buffer with a named lambda
-        cl::sycl::event presum_event = q.submit([&](cl::sycl::handler &cgh) {
-          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::discard_write> presumInd_acc =
-              presumInd.get_access<cl::sycl::access::mode::discard_write>(
-                  cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-          cgh.parallel_for<class presumInd_kernel>(
-              cl::sycl::range<1>{(size_t)graph->number_of_edges},
-              [=](cl::sycl::id<1> tid) { presumInd_acc[tid] = tid.get(0); });
-        });
+        try {
+          cl::sycl::event presum_event = q.submit([&](cl::sycl::handler &cgh) {
+            cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::discard_write> presumInd_acc =
+                presumInd.get_access<cl::sycl::access::mode::discard_write>(
+                    cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+            cgh.parallel_for<class presumInd_kernel>(
+                cl::sycl::range<1>{(size_t)graph->number_of_edges},
+                [=](cl::sycl::id<1> tid) { presumInd_acc[tid] = tid.get(0); });
+          });
 #ifdef DEBUG_2
-        q.wait();
-        std::cout << "DEBUG: Post-PreSum weight index vector of " << graph->number_of_edges
-                  << " elements" << std::endl;
-        {
-          auto debug_acc = presumInd.get_access<cl::sycl::access::mode::read>(
-              cl::sycl::range<1>{(size_t)graph->number_of_edges});
-          for (int i = 0; i < graph->number_of_edges; i++) {
-            std::cout << debug_acc[i] << std::endl;
+          q.wait();
+          std::cout << "DEBUG: Post-PreSum weight index vector of " << graph->number_of_edges
+                    << " elements" << std::endl;
+          {
+            auto debug_acc = presumInd.get_access<cl::sycl::access::mode::read>(
+                cl::sycl::range<1>{(size_t)graph->number_of_edges});
+            for (int i = 0; i < graph->number_of_edges; i++) {
+              std::cout << debug_acc[i] << std::endl;
+            }
           }
-        }
 #endif // DEBUG_2
+#ifdef EVENT_PROFILE
+          wait_and_print(presum, "PreSum")
+#endif // EVENT_PROFILE
+        } catch (sycl::exception e) {
+          std::cerr << "SYCL Exception during Vertex Weight Pre-Sum\n\t" << e.what() << std::endl;
+        }
         cl::sycl::range<2> vertSum_local{1, 32};
         cl::sycl::range<2> vertSum_global{
             std::min((size_t)(graph->number_of_vertices + vertSum_local.get(0) - 1) /
@@ -238,45 +248,48 @@ int main(int argc, char *argv[]) {
         // weights (sum of edges)
         // FIXME the vertex weight buffer may need to be a shareable pointer
         cl::sycl::buffer<WEIGHT_TYPE> vertWeights(graph->number_of_vertices);
-        cl::sycl::event vertSum_event = q.submit([&](cl::sycl::handler &cgh) {
-          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
-              graph->offsets.get_access<cl::sycl::access::mode::read>(
-                  cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices + 1});
-          cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrInd_acc =
-              presumInd.get_access<cl::sycl::access::mode::read>(
-                  cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::discard_write> work_acc =
-              vertWeights.get_access<cl::sycl::access::mode::discard_write>(
-                  cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices});
-          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read_write,
-                             cl::sycl::access::target::local>
-              shfl_temp(vertSum_local.get(0) * vertSum_local.get(1), cgh);
-          cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read> weight_in_acc =
-              graph->edge_data.get_access<cl::sycl::access::mode::read>(
-                  cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
-          sygraph::detail::Jaccard_RowSumKernel<true, int32_t, int32_t, WEIGHT_TYPE> vertSum_kernel(
-              graph->number_of_vertices, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc,
-              shfl_temp);
-          cgh.parallel_for(cl::sycl::nd_range<2>{vertSum_global, vertSum_local}, vertSum_kernel);
-        });
+        try {
+          cl::sycl::event vertSum_event = q.submit([&](cl::sycl::handler &cgh) {
+            cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrPtr_acc =
+                graph->offsets.get_access<cl::sycl::access::mode::read>(
+                    cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices + 1});
+            cl::sycl::accessor<int32_t, 1, cl::sycl::access::mode::read> csrInd_acc =
+                presumInd.get_access<cl::sycl::access::mode::read>(
+                    cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+            cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::discard_write> work_acc =
+                vertWeights.get_access<cl::sycl::access::mode::discard_write>(
+                    cgh, cl::sycl::range<1>{(size_t)graph->number_of_vertices});
+            cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read_write,
+                               cl::sycl::access::target::local>
+                shfl_temp(vertSum_local.get(0) * vertSum_local.get(1), cgh);
+            cl::sycl::accessor<WEIGHT_TYPE, 1, cl::sycl::access::mode::read> weight_in_acc =
+                graph->edge_data.get_access<cl::sycl::access::mode::read>(
+                    cgh, cl::sycl::range<1>{(size_t)graph->number_of_edges});
+            sygraph::detail::Jaccard_RowSumKernel<true, int32_t, int32_t, WEIGHT_TYPE>
+                vertSum_kernel(graph->number_of_vertices, csrPtr_acc, csrInd_acc, weight_in_acc,
+                               work_acc, shfl_temp);
+            cgh.parallel_for(cl::sycl::nd_range<2>{vertSum_global, vertSum_local}, vertSum_kernel);
+          });
 #ifdef DEBUG_2
-        q.wait();
-        std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices
-                  << " elements" << std::endl;
-        {
-          auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(
-              cl::sycl::range<1>{(size_t)graph->number_of_vertices});
-          for (int i = 0; i < graph->number_of_vertices; i++) {
-            std::cout << debug_acc[i] << std::endl;
+          q.wait();
+          std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices
+                    << " elements" << std::endl;
+          {
+            auto debug_acc = vertWeights.get_access<cl::sycl::access::mode::read>(
+                cl::sycl::range<1>{(size_t)graph->number_of_vertices});
+            for (int i = 0; i < graph->number_of_vertices; i++) {
+              std::cout << debug_acc[i] << std::endl;
+            }
           }
-        }
 #endif // DEBUG_2
 #ifdef EVENT_PROFILE
-        wait_and_print(presum, "PreSum") wait_and_print(vertSum, "VertexSum")
+          wait_and_print(vertSum, "EdgeSum")
 #endif // EVENT_PROFILE
+        } catch (sycl::exception e) {
+          std::cerr << "SYCL Exception during Vertex Weight Edge-Sum\n\t" << e.what() << std::endl;
+        }
 
-            sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, vertWeights, results_buf,
-                                                                   q);
+        sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, vertWeights, results_buf, q);
       } else { // Unweighted
         sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
       }
