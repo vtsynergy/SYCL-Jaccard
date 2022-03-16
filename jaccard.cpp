@@ -272,7 +272,7 @@ public:
   }
 };
 
-template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+template <typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_ec_scan {
   edge_t e;
   vertex_t n;
@@ -299,7 +299,7 @@ public:
 };
 
 // Edge-centric-unweighted-kernel
-template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+template <typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_ec_unweighted {
   edge_t e;
   vertex_t n;
@@ -485,7 +485,7 @@ public:
 };
 
 // Jaccard  weights (*weight)
-template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+template <typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_JwKernel {
   edge_t e;
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i;
@@ -538,8 +538,8 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
         cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
             weight_j.template get_access<cl::sycl::access::mode::read_write>(
                 cgh, cl::sycl::range<1>{(size_t)e});
-        Jaccard_ec_scan<weighted, vertex_t, edge_t, weight_t> escan_kernel(
-            e, n, csrPtr_acc, dest_ind_acc, weight_j_acc);
+        Jaccard_ec_scan<vertex_t, edge_t, weight_t> escan_kernel(e, n, csrPtr_acc, dest_ind_acc,
+                                                                 weight_j_acc);
         cgh.parallel_for(cl::sycl::nd_range<1>{scan_global, scan_local}, escan_kernel);
       });
 
@@ -571,8 +571,8 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
         cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j_acc =
             weight_j.template get_access<cl::sycl::access::mode::read_write>(
                 cgh, cl::sycl::range<1>{(size_t)e});
-        Jaccard_ec_unweighted<weighted, vertex_t, edge_t, weight_t> ec_kernel(
-            e, n, csrPtr_acc, csrInd_acc, dest_ind_acc, weight_j_acc);
+        Jaccard_ec_unweighted<vertex_t, edge_t, weight_t> ec_kernel(e, n, csrPtr_acc, csrInd_acc,
+                                                                    dest_ind_acc, weight_j_acc);
         cgh.parallel_for(cl::sycl::nd_range<1>{ec_global, ec_local}, ec_kernel);
       });
 #ifdef DEBUG_2
@@ -766,8 +766,8 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
         cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
             weight_j.template get_access<cl::sycl::access::mode::discard_write>(
                 cgh, cl::sycl::range<1>{(size_t)e});
-        Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(
-            e, weight_i_acc, weight_s_acc, weight_j_acc);
+        Jaccard_JwKernel<vertex_t, edge_t, weight_t> jw_kernel(e, weight_i_acc, weight_s_acc,
+                                                               weight_j_acc);
         cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
       });
 #ifdef DEBUG_2
@@ -929,8 +929,8 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc =
           weight_j.template get_access<cl::sycl::access::mode::discard_write>(
               cgh, cl::sycl::range<1>{(size_t)num_pairs});
-      Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(num_pairs, weight_i_acc,
-                                                                       weight_s_acc, weight_j_acc);
+      Jaccard_JwKernel<vertex_t, edge_t, weight_t> jw_kernel(num_pairs, weight_i_acc, weight_s_acc,
+                                                             weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
     });
   } catch (sycl::exception e) {
