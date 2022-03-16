@@ -205,6 +205,7 @@ int main(int argc, char *argv[]) {
       sygraph::jaccard<true, int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
 
     } else if (implementation & vc_coarse) {
+#ifndef DISABLE_WEIGHTED
       if (isWeighted) {
         // Create the pseudo csrInd buffer
         cl::sycl::buffer<int32_t> presumInd(graph->number_of_edges);
@@ -218,7 +219,7 @@ int main(int argc, char *argv[]) {
                 cl::sycl::range<1>{(size_t)graph->number_of_edges},
                 [=](cl::sycl::id<1> tid) { presumInd_acc[tid] = tid.get(0); });
           });
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
           q.wait();
           std::cout << "DEBUG: Post-PreSum weight index vector of " << graph->number_of_edges
                     << " elements" << std::endl;
@@ -229,10 +230,10 @@ int main(int argc, char *argv[]) {
               std::cout << debug_acc[i] << std::endl;
             }
           }
-#endif // DEBUG_2
-#ifdef EVENT_PROFILE
+  #endif // DEBUG_2
+  #ifdef EVENT_PROFILE
           wait_and_print(presum, "PreSum")
-#endif // EVENT_PROFILE
+  #endif // EVENT_PROFILE
         } catch (sycl::exception e) {
           std::cerr << "SYCL Exception during Vertex Weight Pre-Sum\n\t" << e.what() << std::endl;
         }
@@ -270,7 +271,7 @@ int main(int argc, char *argv[]) {
                                work_acc, shfl_temp);
             cgh.parallel_for(cl::sycl::nd_range<2>{vertSum_global, vertSum_local}, vertSum_kernel);
           });
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
           q.wait();
           std::cout << "DEBUG: Post-VertSum weight vector of " << graph->number_of_vertices
                     << " elements" << std::endl;
@@ -281,18 +282,21 @@ int main(int argc, char *argv[]) {
               std::cout << debug_acc[i] << std::endl;
             }
           }
-#endif // DEBUG_2
-#ifdef EVENT_PROFILE
+  #endif // DEBUG_2
+  #ifdef EVENT_PROFILE
           wait_and_print(vertSum, "EdgeSum")
-#endif // EVENT_PROFILE
+  #endif // EVENT_PROFILE
         } catch (sycl::exception e) {
           std::cerr << "SYCL Exception during Vertex Weight Edge-Sum\n\t" << e.what() << std::endl;
         }
 
         sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, vertWeights, results_buf, q);
       } else { // Unweighted
+#endif         // DISABLE_WEIGHTED
         sygraph::jaccard<false, int32_t, int32_t, WEIGHT_TYPE>(*graph, results_buf, q);
+#ifndef DISABLE_WEIGHTED
       }
+#endif // DISABLE_WEIGHTED
     }
     // Create a new results graph view, using the a copy constructor to re-reference the results
     // buffer
