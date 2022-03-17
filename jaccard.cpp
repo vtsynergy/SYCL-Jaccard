@@ -582,15 +582,6 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       std::cerr << "SYCL Exception during EC-unweighted enqueue\n\t" << e.what() << std::endl;
     }
 
-    weight_t thresh = 0.00001;
-    int count = 0;
-    auto debug_res =
-        weight_j.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(e));
-    for (edge_t i = 0; i < e; i++) {
-      // std::cout << debug_res[i] << std::endl;
-      if (debug_res[i] > thresh) count++;
-    }
-    std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count << std::endl;
 #ifdef EVENT_PROFILE
     try {
       wait_and_print(scan, "ECScan")
@@ -604,6 +595,15 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     }
 #endif // EVENT_PROFILE
 
+    weight_t thresh = 0.00001;
+    int count = 0;
+    auto debug_res =
+        weight_j.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(e));
+    for (edge_t i = 0; i < e; i++) {
+      // std::cout << debug_res[i] << std::endl;
+      if (debug_res[i] > thresh) count++;
+    }
+    std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count << std::endl;
   } else { // Vertex-Centric
     // Needs to be 1 for barriers in warp intrinsic emulation
     size_t y = 1;
