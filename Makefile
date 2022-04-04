@@ -74,14 +74,16 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
   JACCARD_REUSE=-reuse-exe=jaccardSYCL
   COMPARE_REUSE=-reuse-exe=compareCoords
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware
+  CONVERT_REUSE=-reuse-exe=fileConvert
+  HEADER_REUSE=-reuse-exe=readCSRHeader
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
   endif
   ifeq ($(FPGA), INTEL_EMU)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -DINTEL_FPGA_EXT
   endif
 endif
 
@@ -92,13 +94,13 @@ compareCoords: compareCoords.o readMtxToCSR.o filetypes.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o filetypes.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
 
 fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
-	$(SYCL) -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(SYCL_LD_FLAGS)
+	$(SYCL) -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(CONVERT_REUSE) $(SYCL_LD_FLAGS)
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o filetypes.o
 	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 readCSRHeader: readCSRHeader.o readMtxToCSR.o
-	$(SYCL) -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(SYCL_LD_FLAGS)
+	$(SYCL) -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(HEADER_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) -o compareCoords.o -c compareCoords.cpp $(SYCL_C_FLAGS)

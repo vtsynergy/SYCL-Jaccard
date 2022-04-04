@@ -18,6 +18,12 @@
  */
 
 #include "standalone_csr.hpp"
+#ifdef INTEL_FPGA_EXT
+  // Sometimes it's this path (2022.0.2)
+  //#include <sycl/ext/intel/fpga_extensions.hpp>
+  // Sometimes it's this path (2021.2.0)
+  #include <CL/sycl/INTEL/fpga_extensions.hpp>
+#endif
 
 #ifndef __STANDALONE_ALGORITHMS_HPP__
   #define __STANDALONE_ALGORITHMS_HPP__
@@ -258,7 +264,8 @@ public:
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp} {
   }
   // Volume of neighboors (*weight_s)
-  const void operator()(cl::sycl::nd_item<2> tid_info) const {
+  const void
+  operator()(cl::sycl::nd_item<2> tid_info) const {
     vertex_t row;
     edge_t start, end, length;
     weight_t sum;

@@ -27,6 +27,12 @@
   #include <rmm/thrust_rmm_allocator.h>
   #include <utilities/error.hpp>
 #else
+  #ifdef INTEL_FPGA_EXT
+    // Sometimes it's this path (2022.0.2)
+    //#include <sycl/ext/intel/fpga_extensions.hpp>
+    // Sometimes it's this path (2021.2.0)
+    #include <CL/sycl/INTEL/fpga_extensions.hpp>
+  #endif
   #include "standalone_algorithms.hpp"
   #include "standalone_csr.hpp"
   #include <iostream>
