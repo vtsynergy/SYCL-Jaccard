@@ -148,6 +148,9 @@ constexpr inline unsigned int warp_full_mask() {
 // Kernels are implemented as functors or lambdas in SYCL
 // Custom Thrust simplifications
 template <typename T>
+  #ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+  #endif
 const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
   // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
   size_t idx = tid_info.get_global_id(0);
@@ -234,6 +237,9 @@ namespace sygraph {
 namespace detail {
 // Volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+  #ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+  #endif
 // Must be marked external since main.cpp uses it
 extern SYCL_EXTERNAL const void
 Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
@@ -313,6 +319,9 @@ const cl::sycl::event Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>
 }
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
 const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, j, Ni, Nj;
@@ -460,6 +469,9 @@ const cl::sycl::event Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::in
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
 const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, idx, Ni, Nj, match;
@@ -606,6 +618,9 @@ const cl::sycl::event Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t
 
 // Jaccard  weights (*weight)
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
 const void
 Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j;
@@ -652,6 +667,9 @@ const cl::sycl::event Jaccard_JwKernel<vertex_t, edge_t, weight_t>::invoke(
   return jw_event;
 }
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
 const void
 Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j, i;
@@ -701,6 +719,9 @@ const cl::sycl::event Jaccard_ec_scan<vertex_t, edge_t, weight_t>::invoke(
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
 const void
 Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t i, j, Ni, Nj, tid;
