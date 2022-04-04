@@ -28,8 +28,8 @@
   #include <utilities/error.hpp>
 #else
   #ifdef INTEL_FPGA_EXT
-  // Sometimes it's this path (2022.0.2)
-  #include <sycl/ext/intel/fpga_extensions.hpp>
+    // Sometimes it's this path (2022.0.2)
+    #include <sycl/ext/intel/fpga_extensions.hpp>
   // Sometimes it's this path (2021.2.0)
   //#include <CL/sycl/INTEL/fpga_extensions.hpp>
   #endif
@@ -67,7 +67,11 @@ public:
       : ptr{ptr}, value{value}, n{n} {
   }
   // Custom Thrust simplifications
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+  #ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+  #endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
     size_t idx = tid_info.get_global_id(0);
     // equivalent to: incr = blockDim.x*gridDim.x;
@@ -192,7 +196,11 @@ public:
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<3> tid_info) const {
     edge_t i, j, Ni, Nj;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -293,7 +301,11 @@ public:
                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t j, i;
     for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
       for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
@@ -322,7 +334,11 @@ public:
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t i, j, Ni, Nj, tid;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -411,7 +427,11 @@ public:
       : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair},
         second_pair{second_pair}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<3> tid_info) const {
     edge_t i, idx, Ni, Nj, match;
     vertex_t row, col, ref, cur, ref_col, cur_col;
     weight_t ref_val;
@@ -504,7 +524,11 @@ public:
                    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
       : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t j;
     weight_t Wi, Ws, Wu;
 

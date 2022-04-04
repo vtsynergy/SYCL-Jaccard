@@ -264,6 +264,9 @@ public:
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp} {
   }
   // Volume of neighboors (*weight_s)
+  #ifdef INTEL_FPGA_EXT
+  [[intel::kernel_args_restrict]]
+  #endif
   const void
   operator()(cl::sycl::nd_item<2> tid_info) const {
     vertex_t row;
