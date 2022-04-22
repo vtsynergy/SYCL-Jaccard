@@ -28,8 +28,8 @@
   #include <utilities/error.hpp>
 #else
   #ifdef INTEL_FPGA_EXT
-  // Sometimes it's this path (2022.0.2)
-  #include <sycl/ext/intel/fpga_extensions.hpp>
+    // Sometimes it's this path (2022.0.2)
+    #include <sycl/ext/intel/fpga_extensions.hpp>
   // Sometimes it's this path (2021.2.0)
   //#include <CL/sycl/INTEL/fpga_extensions.hpp>
   #endif
@@ -227,7 +227,7 @@ public:
           } else {
             ref_val = 1.0;
           }
-
+#ifndef LINEAR_SEARCH
           // binary search (column indices are sorted within each row)
           edge_t left = csrPtr[cur];
           edge_t right = csrPtr[cur + 1] - 1;
@@ -243,6 +243,21 @@ public:
               break;
             }
           }
+
+#else
+          edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+          while (cur_idx <= cur_end) {
+            cur_col = csrInd[cur_idx];
+            if (ref_col == cur_col) {
+              match = cur_idx;
+              break;
+            } else if (cur_col > ref_col) {
+              break; // neighbor lists are sorted, abort early
+            } else {
+              cur_idx++;
+            }
+          }
+#endif // LINEAR_SEARCH
 
           // if the element with the same column index in the reference row has been found
           if (match != -1) {
@@ -338,6 +353,7 @@ public:
       ref = (Ni < Nj) ? row : col;
       cur = (Ni < Nj) ? col : row;
 
+#ifndef LINEAR_SEARCH
       // compute new sum weights
       for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
         ref_col = csrInd[i];
@@ -357,6 +373,23 @@ public:
           }
         }
       }
+#else
+      edge_t ref_idx = csrPtr[ref], ref_end = csrPtr[ref + 1] - 1;
+      edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+      while (ref_idx <= ref_end && cur_idx <= cur_end) {
+        cur_col = csrInd[cur_idx];
+        ref_col = csrInd[ref_idx];
+        if (ref_col == cur_col) {
+          weight_j[tid] = weight_j[tid] + 1;
+          cur_idx++;
+          ref_idx++;
+        } else if (cur_col > ref_col) {
+          ref_idx++;
+        } else {
+          cur_idx++;
+        }
+      }
+#endif // LINEAR_SEARCH
       // compute JS
       weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
     }
@@ -441,6 +474,7 @@ public:
           ref_val = 1.0;
         }
 
+#ifndef LINEAR_SEARCH
         // binary search (column indices are sorted within each row)
         edge_t left = csrPtr[cur];
         edge_t right = csrPtr[cur + 1] - 1;
@@ -457,7 +491,21 @@ public:
           }
         }
 
-        // if the element with the same column index in the reference row has been found
+#else
+        edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+        while (cur_idx <= cur_end) {
+          cur_col = csrInd[cur_idx];
+          if (ref_col == cur_col) {
+            match = cur_idx;
+            break;
+          } else if (cur_col > ref_col) {
+            break; // neighbor lists are sorted, abort early
+          } else {
+            cur_idx++;
+          }
+        }
+#endif // LINEAR_SEARCH
+       // if the element with the same column index in the reference row has been found
         if (match != -1) {
           // FIXME: Update to SYCL 2020 atomic_refs
           if constexpr (std::is_same<weight_t, double>::value) {

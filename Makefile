@@ -74,12 +74,12 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee -DLINEAR_SEARCH
   JACCARD_REUSE=-reuse-exe=jaccardSYCL
   COMPARE_REUSE=-reuse-exe=compareCoords
   CONVERT_REUSE=-reuse-exe=fileConvert
   HEADER_REUSE=-reuse-exe=readCSRHeader
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee -DLINEAR_SEARCH
   endif
   ifeq ($(FPGA), INTEL_EMU)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
