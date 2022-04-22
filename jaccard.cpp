@@ -349,7 +349,7 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
         } else {
           ref_val = 1.0;
         }
-
+#ifndef LINEAR_SEARCH
         // binary search (column indices are sorted within each row)
         edge_t left = csrPtr[cur];
         edge_t right = csrPtr[cur + 1] - 1;
@@ -365,6 +365,21 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
             break;
           }
         }
+
+#else
+        edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+        while (cur_idx <= cur_end) {
+          cur_col = csrInd[cur_idx];
+          if (ref_col == cur_col) {
+            match = cur_idx;
+            break;
+          } else if (cur_col > ref_col) {
+            break; // neighbor lists are sorted, abort early
+          } else {
+            cur_idx++;
+          }
+        }
+#endif // LINEAR_SEARCH
 
         // if the element with the same column index in the reference row has been found
         if (match != -1) {
@@ -491,6 +506,7 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
         ref_val = 1.0;
       }
 
+#ifndef LINEAR_SEARCH
       // binary search (column indices are sorted within each row)
       edge_t left = csrPtr[cur];
       edge_t right = csrPtr[cur + 1] - 1;
@@ -506,6 +522,21 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
           break;
         }
       }
+
+#else
+      edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+      while (cur_idx <= cur_end) {
+        cur_col = csrInd[cur_idx];
+        if (ref_col == cur_col) {
+          match = cur_idx;
+          break;
+        } else if (cur_col > ref_col) {
+          break; // neighbor lists are sorted, abort early
+        } else {
+          cur_idx++;
+        }
+      }
+#endif // LINEAR_SEARCH
 
       // if the element with the same column index in the reference row has been found
       if (match != -1) {
@@ -718,6 +749,7 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
     ref = (Ni < Nj) ? row : col;
     cur = (Ni < Nj) ? col : row;
 
+#ifndef LINEAR_SEARCH
     // compute new sum weights
     for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
       ref_col = csrInd[i];
@@ -737,6 +769,23 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
         }
       }
     }
+#else
+    edge_t ref_idx = csrPtr[ref], ref_end = csrPtr[ref + 1] - 1;
+    edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+    while (ref_idx <= ref_end && cur_idx <= cur_end) {
+      cur_col = csrInd[cur_idx];
+      ref_col = csrInd[ref_idx];
+      if (ref_col == cur_col) {
+        weight_j[tid] = weight_j[tid] + 1;
+        cur_idx++;
+        ref_idx++;
+      } else if (cur_col > ref_col) {
+        ref_idx++;
+      } else {
+        cur_idx++;
+      }
+    }
+#endif // LINEAR_SEARCH
     // compute JS
     weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
   }
