@@ -212,6 +212,20 @@ public:
         Nj = csrPtr[col + 1] - csrPtr[col];
         ref = (Ni < Nj) ? row : col;
         cur = (Ni < Nj) ? col : row;
+#ifdef LINEAR_SEARCH
+        edge_t curDepth;
+        edge_t refLen = (Ni < Nj) ? Ni : Nj;
+        edge_t curLen = (Ni < Nj) ? Nj : Ni;
+        if constexpr (sizeof(edge_t) == 4) {
+          curDepth = 32 - cl::sycl::clz(curLen); // Fast Int Log2
+        } else {
+          curDepth = 64 - cl::sycl::clz(curLen);
+        }
+        bool useLinear = ((curLen + (refLen / i_incr)) < ((refLen / i_incr) * curDepth));
+        // Cur is now fixed, and we want to retain progress inside the linear search across for i
+        // iterations
+        edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+#endif
 
         // compute new sum weights
         weight_s[j] = work[row] + work[col];
@@ -227,34 +241,39 @@ public:
           } else {
             ref_val = 1.0;
           }
-#ifndef LINEAR_SEARCH
-          // binary search (column indices are sorted within each row)
-          edge_t left = csrPtr[cur];
-          edge_t right = csrPtr[cur + 1] - 1;
-          while (left <= right) {
-            edge_t middle = (left + right) >> 1;
-            cur_col = csrInd[middle];
-            if (cur_col > ref_col) {
-              right = middle - 1;
-            } else if (cur_col < ref_col) {
-              left = middle + 1;
-            } else {
-              match = middle;
-              break;
+#ifdef LINEAR_SEARCH
+          if (!useLinear) {
+#endif
+            // binary search (column indices are sorted within each row)
+            edge_t left = csrPtr[cur];
+            edge_t right = csrPtr[cur + 1] - 1;
+            while (left <= right) {
+              edge_t middle = (left + right) >> 1;
+              cur_col = csrInd[middle];
+              if (cur_col > ref_col) {
+                right = middle - 1;
+              } else if (cur_col < ref_col) {
+                left = middle + 1;
+              } else {
+                match = middle;
+                break;
+              }
             }
-          }
-
-#else
-          edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
-          while (cur_idx <= cur_end) {
-            cur_col = csrInd[cur_idx];
-            if (ref_col == cur_col) {
-              match = cur_idx;
-              break;
-            } else if (cur_col > ref_col) {
-              break; // neighbor lists are sorted, abort early
-            } else {
-              cur_idx++;
+#ifdef LINEAR_SEARCH
+          } else {
+            while (cur_idx <= cur_end) {
+              cur_col = csrInd[cur_idx];
+              if (ref_col == cur_col) {
+                match = cur_idx;
+                cur_idx++; // Advance the comparison, since this thread's next value necessarily
+                           // must be > ref_col
+                break;
+              } else if (cur_col > ref_col) {
+                break; // neighbor lists are sorted, abort early, but do not advance the comparison,
+                       // since this thread's next value may be < cur_col
+              } else {
+                cur_idx++;
+              }
             }
           }
 #endif // LINEAR_SEARCH
@@ -291,7 +310,7 @@ public:
       }
     }
   }
-};
+}; // namespace detail
 
 template <typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_ec_scan {
@@ -352,41 +371,56 @@ public:
       Nj = csrPtr[col + 1] - csrPtr[col];
       ref = (Ni < Nj) ? row : col;
       cur = (Ni < Nj) ? col : row;
+#ifdef LINEAR_SEARCH
+      edge_t curDepth;
+      edge_t refLen = (Ni < Nj) ? Ni : Nj;
+      edge_t curLen = (Ni < Nj) ? Nj : Ni;
+      if constexpr (sizeof(edge_t) == 4) {
+        curDepth = 32 - cl::sycl::clz(curLen); // Fast Int Log2
+      } else {
+        curDepth = 64 - cl::sycl::clz(curLen);
+      }
+      bool useLinear = ((curLen + refLen) < (refLen * curDepth));
+#endif
 
-#ifndef LINEAR_SEARCH
-      // compute new sum weights
-      for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
-        ref_col = csrInd[i];
-        // binary search (column indices are sorted within each row)
-        edge_t left = csrPtr[cur];
-        edge_t right = csrPtr[cur + 1] - 1;
-        while (left <= right) {
-          edge_t middle = (left + right) >> 1;
-          cur_col = csrInd[middle];
-          if (cur_col > ref_col) {
-            right = middle - 1;
-          } else if (cur_col < ref_col) {
-            left = middle + 1;
-          } else {
-            weight_j[tid] = weight_j[tid] + 1;
-            break;
+#ifdef LINEAR_SEARCH
+      if (!useLinear) {
+#endif
+        // compute new sum weights
+        for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
+          ref_col = csrInd[i];
+          // binary search (column indices are sorted within each row)
+          edge_t left = csrPtr[cur];
+          edge_t right = csrPtr[cur + 1] - 1;
+          while (left <= right) {
+            edge_t middle = (left + right) >> 1;
+            cur_col = csrInd[middle];
+            if (cur_col > ref_col) {
+              right = middle - 1;
+            } else if (cur_col < ref_col) {
+              left = middle + 1;
+            } else {
+              weight_j[tid] = weight_j[tid] + 1;
+              break;
+            }
           }
         }
-      }
-#else
-      edge_t ref_idx = csrPtr[ref], ref_end = csrPtr[ref + 1] - 1;
-      edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
-      while (ref_idx <= ref_end && cur_idx <= cur_end) {
-        cur_col = csrInd[cur_idx];
-        ref_col = csrInd[ref_idx];
-        if (ref_col == cur_col) {
-          weight_j[tid] = weight_j[tid] + 1;
-          cur_idx++;
-          ref_idx++;
-        } else if (cur_col > ref_col) {
-          ref_idx++;
-        } else {
-          cur_idx++;
+#ifdef LINEAR_SEARCH
+      } else {
+        edge_t ref_idx = csrPtr[ref], ref_end = csrPtr[ref + 1] - 1;
+        edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+        while (ref_idx <= ref_end && cur_idx <= cur_end) {
+          cur_col = csrInd[cur_idx];
+          ref_col = csrInd[ref_idx];
+          if (ref_col == cur_col) {
+            weight_j[tid] = weight_j[tid] + 1;
+            cur_idx++;
+            ref_idx++;
+          } else if (cur_col > ref_col) {
+            ref_idx++;
+          } else {
+            cur_idx++;
+          }
         }
       }
 #endif // LINEAR_SEARCH
@@ -458,6 +492,21 @@ public:
       Nj = csrPtr[col + 1] - csrPtr[col];
       ref = (Ni < Nj) ? row : col;
       cur = (Ni < Nj) ? col : row;
+#ifdef LINEAR_SEARCH
+      edge_t curDepth;
+      edge_t refLen = (Ni < Nj) ? Ni : Nj;
+      edge_t curLen = (Ni < Nj) ? Nj : Ni;
+      if constexpr (sizeof(edge_t) == 4) {
+        curDepth = 32 - cl::sycl::clz(curLen); // Fast Int Log2
+      } else {
+        curDepth = 64 - cl::sycl::clz(curLen);
+      }
+      bool useLinear = ((curLen + (refLen / tid_info.get_global_range(2))) <
+                        ((refLen / tid_info.get_global_range(2)) * curDepth));
+      // Cur is now fixed, and we want to retain progress inside the linear search across for i
+      // iterations
+      edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
+#endif
 
       // compute new sum weights
       weight_s[idx] = work[row] + work[col];
@@ -474,34 +523,39 @@ public:
           ref_val = 1.0;
         }
 
-#ifndef LINEAR_SEARCH
-        // binary search (column indices are sorted within each row)
-        edge_t left = csrPtr[cur];
-        edge_t right = csrPtr[cur + 1] - 1;
-        while (left <= right) {
-          edge_t middle = (left + right) >> 1;
-          cur_col = csrInd[middle];
-          if (cur_col > ref_col) {
-            right = middle - 1;
-          } else if (cur_col < ref_col) {
-            left = middle + 1;
-          } else {
-            match = middle;
-            break;
+#ifdef LINEAR_SEARCH
+        if (!useLinear) {
+#endif
+          // binary search (column indices are sorted within each row)
+          edge_t left = csrPtr[cur];
+          edge_t right = csrPtr[cur + 1] - 1;
+          while (left <= right) {
+            edge_t middle = (left + right) >> 1;
+            cur_col = csrInd[middle];
+            if (cur_col > ref_col) {
+              right = middle - 1;
+            } else if (cur_col < ref_col) {
+              left = middle + 1;
+            } else {
+              match = middle;
+              break;
+            }
           }
-        }
-
-#else
-        edge_t cur_idx = csrPtr[cur], cur_end = csrPtr[cur + 1] - 1;
-        while (cur_idx <= cur_end) {
-          cur_col = csrInd[cur_idx];
-          if (ref_col == cur_col) {
-            match = cur_idx;
-            break;
-          } else if (cur_col > ref_col) {
-            break; // neighbor lists are sorted, abort early
-          } else {
-            cur_idx++;
+#ifdef LINEAR_SEARCH
+        } else {
+          while (cur_idx <= cur_end) {
+            cur_col = csrInd[cur_idx];
+            if (ref_col == cur_col) {
+              match = cur_idx;
+              cur_idx++; // Advance the comparison, since this thread's next value necessarily must
+                         // be > ref_col
+              break;
+            } else if (cur_col > ref_col) {
+              break; // neighbor lists are sorted, abort early, but do not advance the comparison,
+                     // since this thread's next value may be < cur_col
+            } else {
+              cur_idx++;
+            }
           }
         }
 #endif // LINEAR_SEARCH
