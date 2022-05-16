@@ -47,6 +47,13 @@
     #define EMULATE_ATOMIC_ADD_DOUBLE
   #endif
 
+  // Macros to deal with expanding the PP token and pragma-izing
+  #define ustr(s) #s
+  #define unroll_str(s) ustr(unroll s)
+  #ifndef UNROLL_FACTOR
+    #define UNROLL_FACTOR 1
+  #endif // UNROLL_FACTOR
+
 // From utilties/graph_utils.cuh
 // FIXME Revisit the barriers and fences and local storage with subgroups
 // FIXME revisit with SYCL group algorithms
@@ -340,6 +347,8 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
 
       // compute new intersection weights
       // search for the element with the same column index in the reference row
+// Equivalent to #pragma unroll UNROLL_FACTOR
+#pragma unroll 4
       for (i = csrPtr[ref] + i_off; i < csrPtr[ref + 1]; i += i_incr) {
         match = -1;
         ref_col = csrInd[i];
@@ -656,6 +665,8 @@ const void
 Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j, i;
   for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
+// Equivalent to #pragma unroll UNROLL_FACTOR
+#pragma unroll 4
     for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
       dest_ind[i] = j;
       weight_j[i] = 0;
@@ -719,6 +730,7 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
     cur = (Ni < Nj) ? col : row;
 
     // compute new sum weights
+#pragma unroll 4
     for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
       ref_col = csrInd[i];
       // binary search (column indices are sorted within each row)
