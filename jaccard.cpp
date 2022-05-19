@@ -28,8 +28,8 @@
   #include <utilities/error.hpp>
 #else
   #ifdef INTEL_FPGA_EXT
-  // Sometimes it's this path (2022.0.2)
-  #include <sycl/ext/intel/fpga_extensions.hpp>
+    // Sometimes it's this path (2022.0.2)
+    #include <sycl/ext/intel/fpga_extensions.hpp>
   // Sometimes it's this path (2021.2.0)
   //#include <CL/sycl/INTEL/fpga_extensions.hpp>
   #endif
@@ -67,7 +67,11 @@ public:
       : ptr{ptr}, value{value}, n{n} {
   }
   // Custom Thrust simplifications
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+  #ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(1, 1, VC_FILL_WG_0)]]
+  #endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
     size_t idx = tid_info.get_global_id(0);
     // equivalent to: incr = blockDim.x*gridDim.x;
@@ -80,8 +84,7 @@ public:
 
 template <typename T>
 cl::sycl::event fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q) {
-  // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  size_t block = std::min((size_t)n, (size_t)CUDA_MAX_KERNEL_THREADS);
+  size_t block = VC_FILL_WG_0;
   size_t grid = std::min((size_t)(n / block) + ((n % block) ? 1 : 0), (size_t)CUDA_MAX_BLOCKS);
   // TODO, do we need to emulate their stream behavior?
   cl::sycl::event ret_event;
@@ -192,7 +195,11 @@ public:
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(VC_IS_WG_2, VC_IS_WG_1, VC_IS_WG_0)]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<3> tid_info) const {
     edge_t i, j, Ni, Nj;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -293,7 +300,11 @@ public:
                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(1, 1, EC_SCAN_WG_0)]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t j, i;
     for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
       for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
@@ -322,7 +333,11 @@ public:
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(1, 1, EC_IS_WG_0)]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t i, j, Ni, Nj, tid;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -411,7 +426,11 @@ public:
       : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair},
         second_pair{second_pair}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(VC_IS_WG_2, VC_IS_WG_1, VC_IS_WG_0)]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<3> tid_info) const {
     edge_t i, idx, Ni, Nj, match;
     vertex_t row, col, ref, cur, ref_col, cur_col;
     weight_t ref_val;
@@ -504,7 +523,11 @@ public:
                    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
       : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+#ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(1, 1, VC_JW_WG_0)]]
+#endif
+  const void
+  operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t j;
     weight_t Wi, Ws, Wu;
 
@@ -524,9 +547,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
             cl::sycl::buffer<weight_t> &weight_s, cl::sycl::buffer<vertex_t> &dest_ind,
             cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q) {
   if constexpr (edge_centric) { // Edge-Centric
-    // Needs to be 1 for barriers in warp intrinsic emulation
-    size_t y = 1;
-    cl::sycl::range<1> scan_local{std::min((size_t)n, (size_t)vertex_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> scan_local{EC_SCAN_WG_0};
     cl::sycl::range<1> scan_global{std::min((size_t)(n + scan_local.get(0) - 1) / scan_local.get(0),
                                             (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                    scan_local.get(0)};
@@ -556,7 +577,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       std::cerr << "SYCL Exception during EC-Scan enqueue\n\t" << e.what() << std::endl;
     }
 
-    cl::sycl::range<1> ec_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> ec_local{EC_IS_WG_0};
     cl::sycl::range<1> ec_global{std::min((size_t)(e + ec_local.get(0) - 1) / ec_local.get(0),
                                           (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                  ec_local.get(0)};
@@ -612,11 +633,11 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     std::cout << "vertices " << n << "edges " << e << "non zero pairs " << count << std::endl;
   } else { // Vertex-Centric
     // Needs to be 1 for barriers in warp intrinsic emulation
-    size_t y = 1;
+    size_t y = VC_ROW_SUM_WG_1;
 
     // setup launch configuration
     // SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-    cl::sycl::range<2> sum_local{y, 32};
+    cl::sycl::range<2> sum_local{y, VC_ROW_SUM_WG_0};
     cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) - 1) / sum_local.get(0),
                                            (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                       sum_local.get(0),
@@ -690,12 +711,11 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     }
 
     // Back to previous value since this doesn't require barriers
-    y = 4;
+    y = VC_IS_WG_1;
 
     // setup launch configuration
     // SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-    // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-    cl::sycl::range<3> is_local{8, y, 32 / y};
+    cl::sycl::range<3> is_local{VC_IS_WG_2, y, VC_IS_WG_0};
     cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0),
                                           (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                      is_local.get(0),
@@ -754,7 +774,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     }
 
     // setup launch configuration
-    cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+    cl::sycl::range<1> jw_local{VC_JW_WG_0};
     cl::sycl::range<1> jw_global{std::min((size_t)(e + jw_local.get(0) - 1) / jw_local.get(0),
                                           (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                  jw_local.get(0)};
@@ -818,10 +838,10 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
 
                   cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q) {
   // Needs to be 1 for barriers in warp intrinsic emulation
-  size_t y = 1;
+  size_t y = VC_ROW_SUM_WG_1;
 
   // setup launch configuration
-  cl::sycl::range<2> sum_local{y, 32};
+  cl::sycl::range<2> sum_local{y, VC_ROW_SUM_WG_0};
   cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) - 1) / sum_local.get(0),
                                          (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                     sum_local.get(0),
@@ -867,8 +887,7 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
   y = 4;
 
   // setup launch configuration
-  // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{8, y, 32 / y};
+  cl::sycl::range<3> is_local{VC_IS_WG_2, y, VC_IS_WG_0};
   cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0),
                                         (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                    is_local.get(0),
@@ -918,7 +937,7 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
   }
 
   // setup launch configuration
-  cl::sycl::range<1> jw_local{std::min((size_t)num_pairs, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> jw_local{VC_JW_WG_0};
   cl::sycl::range<1> jw_global{std::min((size_t)(num_pairs + jw_local.get(0) - 1) / jw_local.get(0),
                                         (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                jw_local.get(0)};

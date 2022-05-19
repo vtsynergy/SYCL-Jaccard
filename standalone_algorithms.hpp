@@ -18,6 +18,17 @@
  */
 
 #include "standalone_csr.hpp"
+
+#define VC_ROW_SUM_WG_1 1
+#define VC_ROW_SUM_WG_0 32
+#define VC_FILL_WG_0 CUDA_MAX_KERNEL_THREADS
+#define VC_IS_WG_2 8
+#define VC_IS_WG_1 4
+#define VC_IS_WG_0 (32 / VC_IS_WG_1)
+#define VC_JW_WG_0 CUDA_MAX_KERNEL_THREADS
+#define EC_SCAN_WG_0 CUDA_MAX_KERNEL_THREADS
+#define EC_IS_WG_0 CUDA_MAX_KERNEL_THREADS
+
 #ifdef INTEL_FPGA_EXT
   // Sometimes it's this path (2022.0.2)
   #include <sycl/ext/intel/fpga_extensions.hpp>
@@ -264,6 +275,9 @@ public:
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp} {
   }
   // Volume of neighboors (*weight_s)
+  #ifdef INTEL_FPGA_EXT
+  [[cl::reqd_work_group_size(1, VC_ROW_SUM_WG_1, VC_ROW_SUM_WG_0)]]
+  #endif
   const void
   operator()(cl::sycl::nd_item<2> tid_info) const {
     vertex_t row;
