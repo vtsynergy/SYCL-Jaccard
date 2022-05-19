@@ -68,7 +68,7 @@ ifeq ($(COMPILER), HIPSYCL)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
-  ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
+  ONEAPI_PATH=/opt/intel/oneapi/compiler/2022.1.0/linux
 #  LD_LIBRARY_PATH:=$(ONEAPI_PATH)/compiler/lib/intel64_lin:$(LD_LIBRARY_PATH)
   SYCL=$(ONEAPI_PATH)/bin/icx
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
