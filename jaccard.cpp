@@ -148,7 +148,11 @@ constexpr inline unsigned int warp_full_mask() {
 // Kernels are implemented as functors or lambdas in SYCL
 // Custom Thrust simplifications
 template <typename T>
-const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
+  #ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(1, 1, VC_FILL_WG_0)]]
+  #endif
+const void
+FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
   // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
   size_t idx = tid_info.get_global_id(0);
   // equivalent to: incr = blockDim.x*gridDim.x;
@@ -162,7 +166,7 @@ template <typename T>
 const cl::sycl::event FillKernel<T>::invoke(size_t n, cl::sycl::buffer<T> &x, T value,
                                             cl::sycl::queue &q) {
   // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  size_t block = std::min((size_t)n, (size_t)CUDA_MAX_KERNEL_THREADS);
+  size_t block = VC_FILL_WG_0;
   size_t grid = std::min((size_t)(n / block) + ((n % block) ? 1 : 0), (size_t)CUDA_MAX_BLOCKS);
   // TODO, do we need to emulate their stream behavior?
   cl::sycl::event ret_event;
@@ -234,6 +238,9 @@ namespace sygraph {
 namespace detail {
 // Volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(1, VC_ROW_SUM_WG_1, VC_ROW_SUM_WG_0)]]
+#endif
 // Must be marked external since main.cpp uses it
 extern SYCL_EXTERNAL const void
 Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
@@ -265,11 +272,11 @@ const cl::sycl::event Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>
     vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr, cl::sycl::buffer<vertex_t> &csrInd,
     cl::sycl::buffer<weight_t> *weight_in, cl::sycl::buffer<weight_t> &work, cl::sycl::queue &q) {
   // Needs to be 1 for barriers in warp intrinsic emulation
-  size_t y = 1;
+  size_t y = VC_ROW_SUM_WG_1;
 
   // setup launch configuration
   // SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-  cl::sycl::range<2> sum_local{y, 32};
+  cl::sycl::range<2> sum_local{y, VC_ROW_SUM_WG_0};
   cl::sycl::range<2> sum_global{std::min((size_t)(n + sum_local.get(0) - 1) / sum_local.get(0),
                                          (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                     sum_local.get(0),
@@ -313,7 +320,11 @@ const cl::sycl::event Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>
 }
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(VC_IS_WG_2, VC_IS_WG_1, VC_IS_WG_0)]]
+#endif
+const void
+Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, j, Ni, Nj;
   vertex_t row, col;
@@ -406,12 +417,11 @@ const cl::sycl::event Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::in
     cl::sycl::buffer<weight_t> &weight_i, cl::sycl::buffer<weight_t> &weight_s,
     cl::sycl::queue &q) {
   // Back to previous value since this doesn't require barriers
-  size_t y = 4;
+  size_t y = VC_IS_WG_1;
 
   // setup launch configuration
   // SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
-  // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{8, y, 32 / y};
+  cl::sycl::range<3> is_local{VC_IS_WG_2, y, VC_IS_WG_0};
   cl::sycl::range<3> is_global{std::min((size_t)(n + is_local.get(0) - 1) / is_local.get(0),
                                         (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
                                    is_local.get(0),
@@ -460,7 +470,11 @@ const cl::sycl::event Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::in
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(VC_IS_WG_2, VC_IS_WG_1, VC_IS_WG_0)]]
+#endif
+const void
+Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, idx, Ni, Nj, match;
   vertex_t row, col, ref, cur, ref_col, cur_col;
@@ -548,9 +562,11 @@ const cl::sycl::event Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t
     cl::sycl::buffer<weight_t> &weight_s,
 
     cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q) {
+  size_t y = VC_IS_WG_1;
+
   // setup launch configuration
-  // FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{32, 1, 8};
+  // SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
+  cl::sycl::range<3> is_local{VC_IS_WG_2, y, VC_IS_WG_0};
   cl::sycl::range<3> is_global{1 * is_local.get(0), 1 * is_local.get(1),
                                std::min((size_t)(n + is_local.get(2) - 1) / is_local.get(2),
                                         (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
@@ -606,6 +622,9 @@ const cl::sycl::event Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t
 
 // Jaccard  weights (*weight)
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(1, 1, VC_JW_WG_0)]]
+#endif
 const void
 Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j;
@@ -624,7 +643,7 @@ const cl::sycl::event Jaccard_JwKernel<vertex_t, edge_t, weight_t>::invoke(
     edge_t e, cl::sycl::buffer<weight_t> &weight_i, cl::sycl::buffer<weight_t> &weight_s,
     cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q) {
   // setup launch configuration
-  cl::sycl::range<1> jw_local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> jw_local{VC_JW_WG_0};
   cl::sycl::range<1> jw_global{std::min((size_t)(e + jw_local.get(0) - 1) / jw_local.get(0),
                                         (size_t)edge_t{CUDA_MAX_BLOCKS}) *
                                jw_local.get(0)};
@@ -652,6 +671,9 @@ const cl::sycl::event Jaccard_JwKernel<vertex_t, edge_t, weight_t>::invoke(
   return jw_event;
 }
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(1, 1, EC_SCAN_WG_0)]]
+#endif
 const void
 Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j, i;
@@ -667,7 +689,7 @@ template <typename vertex_t, typename edge_t, typename weight_t>
 const cl::sycl::event Jaccard_ec_scan<vertex_t, edge_t, weight_t>::invoke(
     edge_t e, vertex_t n, cl::sycl::buffer<edge_t> &csrPtr, cl::sycl::buffer<vertex_t> &dest_ind,
     cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q) {
-  cl::sycl::range<1> local{std::min((size_t)n, (size_t)vertex_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> local{EC_SCAN_WG_0};
   cl::sycl::range<1> global{
       std::min((size_t)(n + local.get(0) - 1) / local.get(0), (size_t)vertex_t{CUDA_MAX_BLOCKS}) *
       local.get(0)};
@@ -701,6 +723,9 @@ const cl::sycl::event Jaccard_ec_scan<vertex_t, edge_t, weight_t>::invoke(
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
+#ifdef INTEL_FPGA_EXT
+[[cl::reqd_work_group_size(1, 1, EC_IS_WG_0)]]
+#endif
 const void
 Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t i, j, Ni, Nj, tid;
@@ -747,7 +772,7 @@ const cl::sycl::event Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::invoke(
     edge_t e, vertex_t n, cl::sycl::buffer<edge_t> &csrPtr, cl::sycl::buffer<vertex_t> &csrInd,
     cl::sycl::buffer<vertex_t> &dest_ind, cl::sycl::buffer<weight_t> &weight_j,
     cl::sycl::queue &q) {
-  cl::sycl::range<1> local{std::min((size_t)e, (size_t)edge_t{CUDA_MAX_KERNEL_THREADS})};
+  cl::sycl::range<1> local{EC_IS_WG_0};
   cl::sycl::range<1> global{
       std::min((size_t)(e + local.get(0) - 1) / local.get(0), (size_t)edge_t{CUDA_MAX_BLOCKS}) *
       local.get(0)};
