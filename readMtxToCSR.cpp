@@ -48,8 +48,8 @@ std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted, bool dr
 // This assumes we've already read the header
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
-                                               bool *isDirected, VT *numVerts,
-                                               ET *numEdges, bool dropWeights) {
+                                               bool *isDirected, VT *numVerts, ET *numEdges,
+                                               bool dropWeights) {
   std::set<std::tuple<ET, VT, WT>> *ret_edges = new std::set<std::tuple<ET, VT, WT>>();
   std::vector<std::tuple<ET, VT, WT>> *tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   // TODO This should really do all the header parsing here, rather than relying on the caller to do
@@ -395,8 +395,8 @@ void *FileToCSR(std::ifstream &fileIn, CSRFileHeader *header) {
 }
 
 // Explicit instantiations since separately compiling and linking
-template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn,
-                                                             bool isWeighted, bool dropWeights);
+template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn, bool isWeighted,
+                                                             bool dropWeights);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *
 fileToMTXSet(std::ifstream &fileIn, bool *hasWeights, bool *isDirected, int32_t *numVerts,
              int32_t *numEdges, bool dropWeights);

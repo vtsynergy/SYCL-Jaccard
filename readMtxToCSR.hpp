@@ -21,7 +21,8 @@
 #define CSR_BINARY_FORMAT_VERSION 2
 
 template <typename ET, typename VT, typename WT>
-std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true, bool dropWeights = false);
+std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true,
+                                 bool dropWeights = false);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
                                                bool *isDirected, VT *numVerts = nullptr,
@@ -58,7 +59,7 @@ typedef struct {
     bool isEdgeT64 : 1;   // Whether the edge type is int64_t (8 bytes wide) or int32_t (4 bytes)
     bool isWeightT64 : 1; // whether the weight type is double (8 bytes wide) or float (4 bytes
                           // wide)
-    long long zeroPad : 57 = 0; //Make sure the remaining bits are initialized to zero (C++20)
+    long long zeroPad : 57 = 0; // Make sure the remaining bits are initialized to zero (C++20)
   } flags;
 } CSRFileHeader;
 
