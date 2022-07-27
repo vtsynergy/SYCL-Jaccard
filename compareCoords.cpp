@@ -34,6 +34,37 @@ std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *readCoordFile(std::ifstream
   return ret_set;
 }
 
+void printNeighborsMTX(int64_t src, int64_t dest,
+                       std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>>::iterator goldItr) {
+  // goldItr should be in the range of src, since we're only called during a mismatch, backtrack
+  // until the first neighbor
+  while (std::get<0>(*(goldItr)) == src)
+    --goldItr;
+  ++goldItr; // we went one past
+  // print until we run out of neighbors
+  std::cerr << "Begin neighbors of " << src << std::endl;
+  while (std::get<0>(*goldItr) == src) {
+    std::cerr << "(" << std::get<0>(*goldItr) << ", " << std::get<1>(*goldItr) << ")" << std::endl;
+    ++goldItr;
+  }
+  std::cerr << "End neighbors of " << src << std::endl;
+  // dest could be before or after
+  if (dest < src) {
+    while (std::get<0>(*(goldItr)) >= dest)
+      --goldItr;
+    ++goldItr; // we went one past
+  } else {
+    while (std::get<0>(*(goldItr)) < dest)
+      ++goldItr;
+  }
+  std::cerr << "Begin neighbors of " << dest << std::endl;
+  while (std::get<0>(*goldItr) == dest) {
+    std::cerr << "(" << std::get<0>(*goldItr) << ", " << std::get<1>(*goldItr) << ")" << std::endl;
+    ++goldItr;
+  }
+  std::cerr << "End neighbors of " << dest << std::endl;
+}
+
 int main(int argc, char *argv[]) {
   if (argc != 4) {
     std::cerr << "Error, incorrect number of args, usage is:\n./compareCoords <goldFile> "
@@ -49,11 +80,11 @@ int main(int argc, char *argv[]) {
   int64_t numVerts = 0, numEdges = 0, count = 0;
   std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>> *goldSet =
       fileToMTXSet<int64_t, int64_t, WEIGHT_TYPE>(gold, &hasWeights, &isDirected, &numVerts,
-                                                  &numEdges);
+                                                  &numEdges, false);
   int64_t onePct = numEdges / 100;
   std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>> *testSet =
       fileToMTXSet<int64_t, int64_t, WEIGHT_TYPE>(test, &hasWeights, &isDirected, &numVerts,
-                                                  &numEdges);
+                                                  &numEdges, false);
   gold.close();
   test.close();
 
@@ -69,6 +100,7 @@ int main(int argc, char *argv[]) {
   std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>>::iterator goldItr = goldSet->begin();
   std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>>::iterator testItr = testSet->begin();
   while (goldItr != goldSet->end() && testItr != testSet->end()) {
+
     // If the coordinates match, then test for equality
     if ((std::get<0>(*goldItr) == std::get<0>(*testItr)) &&
         (std::get<1>(*goldItr) == std::get<1>(*testItr))) {
@@ -79,6 +111,7 @@ int main(int argc, char *argv[]) {
                   << " tolerance! Gold: " << std::get<2>(*goldItr)
                   << " vs. Test: " << std::get<2>(*testItr) << std::endl;
         ++warnCount;
+        printNeighborsMTX(std::get<0>(*goldItr), std::get<1>(*goldItr), goldItr);
       }
       ++goldItr;
       ++testItr;
