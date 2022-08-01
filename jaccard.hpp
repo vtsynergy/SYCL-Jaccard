@@ -142,45 +142,6 @@ public:
   const void operator()(cl::sycl::nd_item<3> tid_info) const;
 };
 
-template <typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_ec_scan {
-  edge_t e;
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
-
-public:
-  Jaccard_ec_scan(edge_t e, vertex_t n,
-                  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-                  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind,
-                  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
-      : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
-  }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
-};
-
-// Edge-centric-unweighted-kernel
-template <typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_ec_unweighted {
-  edge_t e;
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
-
-public:
-  Jaccard_ec_unweighted(
-      edge_t e, vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
-      : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
-  }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
-};
-
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
@@ -245,6 +206,45 @@ public:
                    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s,
                    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
       : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j} {
+  }
+  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+};
+
+template <typename vertex_t, typename edge_t, typename weight_t>
+class Jaccard_ec_scan {
+  edge_t e;
+  vertex_t n;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
+
+public:
+  Jaccard_ec_scan(edge_t e, vertex_t n,
+                  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+                  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind,
+                  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
+      : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
+  }
+  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+};
+
+// Edge-centric-unweighted-kernel
+template <typename vertex_t, typename edge_t, typename weight_t>
+class Jaccard_ec_unweighted {
+  edge_t e;
+  vertex_t n;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
+
+public:
+  Jaccard_ec_unweighted(
+      edge_t e, vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
+      : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
   const void operator()(cl::sycl::nd_item<1> tid_info) const;
 };
