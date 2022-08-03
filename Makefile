@@ -14,6 +14,7 @@
 # * limitations under the License.
 # *
 
+CWD := $(shell pwd)
 ifeq ($(DEBUG), 1)
   OPTS=-g -DDEBUG -O0
 else ifeq ($(DEBUG), 2)
@@ -96,8 +97,11 @@ compareCoords: compareCoords.o readMtxToCSR.o filetypes.o
 fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
 	$(SYCL) -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(CONVERT_REUSE) $(SYCL_LD_FLAGS)
 
-jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o filetypes.o
-	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
+jaccardSYCL: jaccardSYCL_entrypoints.o jaccardSYCL_cugraph.so jaccardSYCL_ec.so readMtxToCSR.o main.o filetypes.o
+	$(SYCL) -o jaccardSYCL jaccardSYCL_entrypoints.o jaccardSYCL_cugraph.so jaccardSYCL_ec.so readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS) -Wl,-rpath=$(CWD)
+#Static linking doesn't trigger separate synthesis
+#jaccardSYCL: jaccardSYCL_entrypoints.o jaccardSYCL_cugraph.a jaccardSYCL_ec.a readMtxToCSR.o main.o filetypes.o
+#	$(SYCL) -o jaccardSYCL jaccardSYCL_entrypoints.o jaccardSYCL_cugraph.a jaccardSYCL_ec.a readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 readCSRHeader: readCSRHeader.o readMtxToCSR.o
 	$(SYCL) -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(HEADER_REUSE) $(SYCL_LD_FLAGS)
@@ -111,10 +115,27 @@ fileConvert.o: fileConvert.cpp
 filetypes.o: filetypes.cpp
 	$(SYCL) -o filetypes.o -c filetypes.cpp $(SYCL_C_FLAGS)
 
-jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
-	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
+jaccardSYCL_cugraph.so: jaccardSYCL_cugraph.o
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_cugraph.so jaccardSYCL_cugraph.o -fPIC -shared -D STANDALONE -DCUGRAPH_KERNELS -Wl,-rpath=$(CWD)
+#jaccardSYCL_cugraph.a: jaccardSYCL_cugraph.o
+#	ar r jaccardSYCL_cugraph.a jaccardSYCL_cugraph.o -v
 
-main.o: main.cpp
+jaccardSYCL_cugraph.o: jaccard.cpp standalone_csr.hpp jaccard.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL_cugraph.o -fPIC -c jaccard.cpp -D STANDALONE -DCUGRAPH_KERNELS
+
+jaccardSYCL_ec.so: jaccardSYCL_ec.o
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_ec.so jaccardSYCL_ec.o -fPIC -shared -D STANDALONE -DEC_KERNELS -Wl,-rpath=$(CWD)
+#jaccardSYCL_ec.a: jaccardSYCL_ec.o
+#	ar r jaccardSYCL_ec.a jaccardSYCL_ec.o
+
+
+jaccardSYCL_ec.o: jaccard.cpp standalone_csr.hpp jaccard.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL_ec.o -fPIC -c jaccard.cpp -D STANDALONE -DEC_KERNELS
+
+jaccardSYCL_entrypoints.o: jaccard.cpp standalone_csr.hpp jaccard.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL_entrypoints.o -c jaccard.cpp -D STANDALONE -DENTRYPOINTS
+
+main.o: main.cpp jaccard.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
 
 readCSRHeader.o: readCSRHeader.cpp
@@ -125,4 +146,4 @@ readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 
 .PHONY: clean
 clean:
-	rm jaccardSYCL compareCoords fileConvert readCSRHeader *.o	
+	rm jaccardSYCL compareCoords fileConvert readCSRHeader *.o *.a *.so

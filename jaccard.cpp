@@ -47,6 +47,7 @@
     #define EMULATE_ATOMIC_ADD_DOUBLE
   #endif
 
+  #ifdef CUGRAPH_KERNELS
 // From utilties/graph_utils.cuh
 // FIXME Revisit the barriers and fences and local storage with subgroups
 // FIXME revisit with SYCL group algorithms
@@ -148,7 +149,7 @@ constexpr inline unsigned int warp_full_mask() {
 // Kernels are implemented as functors or lambdas in SYCL
 // Custom Thrust simplifications
 template <typename T>
-const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
+extern SYCL_EXTERNAL const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
   // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
   size_t idx = tid_info.get_global_id(0);
   // equivalent to: incr = blockDim.x*gridDim.x;
@@ -157,7 +158,6 @@ const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
     ptr[idx] = value;
   }
 }
-
 template <typename T>
 const cl::sycl::event FillKernel<T>::invoke(size_t n, cl::sycl::buffer<T> &x, T value,
                                             cl::sycl::queue &q) {
@@ -181,7 +181,12 @@ const cl::sycl::event FillKernel<T>::invoke(size_t n, cl::sycl::buffer<T> &x, T 
   return ret_event;
 }
 
-  #ifdef EMULATE_ATOMIC_ADD_FLOAT
+// Without entrypoints, kernels need to be explicitly instantiated too
+template class FillKernel<float>;
+    #ifndef DISABLE_DP_WEIGHT
+template class FillKernel<double>;
+    #endif // DISABLE_DP_WEIGHT
+    #ifdef EMULATE_ATOMIC_ADD_FLOAT
 // Inspired by the older CUDA C Programming Guide
 float myAtomicAdd(cl::sycl::atomic<uint32_t> &address, float val) {
   uint32_t old = address.load();
@@ -203,8 +208,8 @@ float myAtomicAdd(cl::sycl::atomic<uint32_t> &address, float val) {
 
   return *reinterpret_cast<float *>(&old);
 }
-  #endif // EMULATE_ATOMIC_ADD_FLOAT
-  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
+    #endif // EMULATE_ATOMIC_ADD_FLOAT
+    #ifdef EMULATE_ATOMIC_ADD_DOUBLE
 // Inspired by the older CUDA C Programming Guide
 double myAtomicAdd(cl::sycl::atomic<uint64_t> &address, double val) {
   uint64_t old = address.load();
@@ -226,12 +231,14 @@ double myAtomicAdd(cl::sycl::atomic<uint64_t> &address, double val) {
 
   return *reinterpret_cast<double *>(&old);
 }
-  #endif // EMULATE_ATOMIC_ADD_DOUBLE
+    #endif // EMULATE_ATOMIC_ADD_DOUBLE
+  #endif   // CUGRAPH_KERNELS
 
 #endif // STANDALONE
 
 namespace sygraph {
 namespace detail {
+#ifdef CUGRAPH_KERNELS
 // Volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 // Must be marked external since main.cpp uses it
@@ -313,7 +320,7 @@ const cl::sycl::event Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>
 }
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+extern SYCL_EXTERNAL const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, j, Ni, Nj;
   vertex_t row, col;
@@ -371,25 +378,25 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
           // FIXME: Update to SYCL 2020 atomic_refs
           if constexpr (std::is_same<weight_t, double>::value) {
             // if constexpr (typeid(weight_t) == typeid(double)) {
-#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
             cl::sycl::atomic<uint64_t> atom_weight{
                 cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
             myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
             cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
             atom_weight.fetch_add(ref_val);
-#endif
+  #endif
           }
           // if constexpr (typeid(weight_t) == typeid(float)) {
           if constexpr (std::is_same<weight_t, float>::value) {
-#ifdef EMULATE_ATOMIC_ADD_FLOAT
+  #ifdef EMULATE_ATOMIC_ADD_FLOAT
             cl::sycl::atomic<uint32_t> atom_weight{
                 cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
             myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
             cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
             atom_weight.fetch_add(ref_val);
-#endif
+  #endif
           }
           // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
           // atomics atomicAdd(&weight_i[j], ref_val);
@@ -460,7 +467,8 @@ const cl::sycl::event Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::in
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+extern SYCL_EXTERNAL const void
+Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, idx, Ni, Nj, match;
   vertex_t row, col, ref, cur, ref_col, cur_col;
@@ -512,25 +520,25 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
         // FIXME: Update to SYCL 2020 atomic_refs
         if constexpr (std::is_same<weight_t, double>::value) {
           // if constexpr (typeid(weight_t) == typeid(double)) {
-#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
           cl::sycl::atomic<uint64_t> atom_weight{
               cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[i]}};
           myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
           cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
           atom_weight.fetch_add(ref_val);
-#endif
+  #endif
         }
         // if constexpr (typeid(weight_t) == typeid(float)) {
         if constexpr (std::is_same<weight_t, float>::value) {
-#ifdef EMULATE_ATOMIC_ADD_FLOAT
+  #ifdef EMULATE_ATOMIC_ADD_FLOAT
           cl::sycl::atomic<uint32_t> atom_weight{
               cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[i]}};
           myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
           cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
           atom_weight.fetch_add(ref_val);
-#endif
+  #endif
         }
         // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
         // atomics atomicAdd(&weight_i[j], ref_val);
@@ -606,7 +614,7 @@ const cl::sycl::event Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t
 
 // Jaccard  weights (*weight)
 template <typename vertex_t, typename edge_t, typename weight_t>
-const void
+const void extern SYCL_EXTERNAL
 Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j;
   weight_t Wi, Ws, Wu;
@@ -651,8 +659,76 @@ const cl::sycl::event Jaccard_JwKernel<vertex_t, edge_t, weight_t>::invoke(
   }
   return jw_event;
 }
+// Without entrypoints, kernels need to be explicitly instantiated too
+template class Jaccard_JwKernel<int32_t, int32_t, float>;
+  #ifndef DISABLE_WEIGHTED
+template class Jaccard_RowSumKernel<true, int32_t, int32_t, float>;
+template class Jaccard_IsKernel<true, int32_t, int32_t, float>;
+    #ifndef DISABLE_DP_INDEX
+template class Jaccard_RowSumKernel<true, int64_t, int64_t, float>;
+template class Jaccard_IsKernel<true, int64_t, int64_t, float>;
+    #endif // DISABLE_DP_INDEX
+  #endif   // DISABLE_WEIGHTED
+  #ifndef DISABLE_UNWEIGHTED
+template class Jaccard_RowSumKernel<false, int32_t, int32_t, float>;
+template class Jaccard_IsKernel<false, int32_t, int32_t, float>;
+    #ifndef DISABLE_DP_INDEX
+template class Jaccard_RowSumKernel<false, int64_t, int64_t, float>;
+template class Jaccard_IsKernel<false, int64_t, int64_t, float>;
+    #endif // DISABLE_DP_INDEX
+  #endif   // DISABLE_UNWEIGHTED
+  #ifndef DISABLE_LIST
+    #ifndef DISABLE_WEIGHTED
+template class Jaccard_IsPairsKernel<true, int32_t, int32_t, float>;
+      #ifndef DISABLE_DP_INDEX
+template class Jaccard_IsPairsKernel<true, int64_t, int64_t, float>;
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_WEIGHTED
+    #ifndef DISABLE_UNWEIGHTED
+template class Jaccard_IsPairsKernel<false, int32_t, int32_t, float>;
+      #ifndef DISABLE_DP_INDEX
+template class Jaccard_IsPairsKernel<false, int64_t, int64_t, float>;
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_UNWEIGHTED
+  #endif     // DISABLE_LIST
+  #ifndef DISABLE_DP_WEIGHT
+template class Jaccard_JwKernel<int32_t, int32_t, double>;
+    #ifndef DISABLE_WEIGHTED
+template class Jaccard_RowSumKernel<true, int32_t, int32_t, double>;
+template class Jaccard_IsKernel<true, int32_t, int32_t, double>;
+      #ifndef DISABLE_DP_INDEX
+template class Jaccard_RowSumKernel<true, int64_t, int64_t, double>;
+template class Jaccard_IsKernel<true, int64_t, int64_t, double>;
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_WEIGHTED
+    #ifndef DISABLE_UNWEIGHTED
+template class Jaccard_RowSumKernel<false, int32_t, int32_t, double>;
+template class Jaccard_IsKernel<false, int32_t, int32_t, double>;
+      #ifndef DISABLE_DP_INDEX
+template class Jaccard_RowSumKernel<false, int64_t, int64_t, double>;
+template class Jaccard_IsKernel<false, int64_t, int64_t, double>;
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_UNWEIGHTED
+    #ifndef DISABLE_LIST
+      #ifndef DISABLE_WEIGHTED
+template class Jaccard_IsPairsKernel<true, int32_t, int32_t, double>;
+        #ifndef DISABLE_DP_INDEX
+template class Jaccard_IsPairsKernel<true, int64_t, int64_t, double>;
+        #endif // DISABLE_DP_INDEX
+      #endif   // DISABLE_WEIGHTED
+      #ifndef DISABLE_UNWEIGHTED
+template class Jaccard_IsPairsKernel<false, int32_t, int32_t, double>;
+        #ifndef DISABLE_DP_INDEX
+template class Jaccard_IsPairsKernel<false, int64_t, int64_t, double>;
+        #endif // DISABLE_DP_INDEX
+      #endif   // DISABLE_UNWEIGHTED
+    #endif     // DISABLE_LIST
+  #endif       // DISABLE_DP_WEIGHT
+#endif         // CUGRAPH_KERNELS
+
+#ifdef EC_KERNELS
 template <typename vertex_t, typename edge_t, typename weight_t>
-const void
+const void extern SYCL_EXTERNAL
 Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t j, i;
   for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
@@ -690,9 +766,9 @@ const cl::sycl::event Jaccard_ec_scan<vertex_t, edge_t, weight_t>::invoke(
       cgh.parallel_for(cl::sycl::nd_range<1>{global, local}, escan_kernel);
     });
 
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     q.wait();
-#endif // DEBUG_2
+  #endif // DEBUG_2
   } catch (sycl::exception e) {
     std::cerr << "SYCL Exception during EC-Scan enqueue\n\t" << e.what() << std::endl;
   }
@@ -701,7 +777,7 @@ const cl::sycl::event Jaccard_ec_scan<vertex_t, edge_t, weight_t>::invoke(
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
-const void
+const void extern SYCL_EXTERNAL
 Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t i, j, Ni, Nj, tid;
   vertex_t row, col;
@@ -741,7 +817,6 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
     weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
   }
 }
-
 template <typename vertex_t, typename edge_t, typename weight_t>
 const cl::sycl::event Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::invoke(
     edge_t e, vertex_t n, cl::sycl::buffer<edge_t> &csrPtr, cl::sycl::buffer<vertex_t> &csrInd,
@@ -772,15 +847,33 @@ const cl::sycl::event Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::invoke(
                                                                   dest_ind_acc, weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{global, local}, ec_kernel);
     });
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     q.wait();
-#endif // DEBUG_2
+  #endif // DEBUG_2
   } catch (sycl::exception e) {
     std::cerr << "SYCL Exception during EC-unweighted enqueue\n\t" << e.what() << std::endl;
   }
   return edgec_event;
 }
 
+// Without entrypoints, kernels need to be explicitly instantiated too
+template class Jaccard_ec_scan<int32_t, int32_t, float>;
+template class Jaccard_ec_unweighted<int32_t, int32_t, float>;
+  #ifndef DISABLE_DP_INDEX
+template class Jaccard_ec_scan<int64_t, int64_t, float>;
+template class Jaccard_ec_unweighted<int64_t, int64_t, float>;
+  #endif // DISABLE_DP_INDEX
+  #ifndef DISABLE_DP_WEIGHT
+template class Jaccard_ec_scan<int32_t, int32_t, double>;
+template class Jaccard_ec_unweighted<int32_t, int32_t, double>;
+    #ifndef DISABLE_DP_INDEX
+template class Jaccard_ec_scan<int64_t, int64_t, double>;
+template class Jaccard_ec_unweighted<int64_t, int64_t, double>;
+    #endif // DISABLE_DP_INDEX
+  #endif   // DISABLE_DP_WEIGHT
+#endif     // EC_KERNELS
+
+#ifdef ENTRYPOINTS
 template <bool edge_centric, bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
             cl::sycl::buffer<vertex_t> &csrInd, cl::sycl::buffer<weight_t> *weight_in,
@@ -795,7 +888,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     cl::sycl::event edgec_event = Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::invoke(
         e, n, csrPtr, csrInd, dest_ind, weight_j, q);
 
-#ifdef EVENT_PROFILE
+  #ifdef EVENT_PROFILE
     try {
       wait_and_print(scan, "ECScan")
     } catch (sycl::exception e) {
@@ -806,7 +899,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     } catch (sycl::exception e) {
       std::cerr << "SYCL Exception while waiting for EC-unweighted\n\t" << e.what() << std::endl;
     }
-#endif // EVENT_PROFILE
+  #endif // EVENT_PROFILE
 
     weight_t thresh = 0.00001;
     int count = 0;
@@ -820,7 +913,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
   } else { // Vertex-Centric
     cl::sycl::event sum_event = Jaccard_RowSumKernel<weighted, vertex_t, edge_t, weight_t>::invoke(
         n, e, csrPtr, csrInd, weight_in, work, q);
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     //  cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
     std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
     {
@@ -832,9 +925,9 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       }
       //    });
     }
-#endif // DEBUG_2
+  #endif // DEBUG_2
     cl::sycl::event fill_event = FillKernel<weight_t>::invoke(e, weight_i, weight_t{0.0}, q);
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     q.wait();
     std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
     {
@@ -846,10 +939,10 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       }
       //    });
     }
-#endif // DEBUG_2
+  #endif // DEBUG_2
     cl::sycl::event is_event = Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::invoke(
         n, e, csrPtr, csrInd, weight_in, work, weight_i, weight_s, q);
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     q.wait();
     std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements"
               << std::endl;
@@ -864,15 +957,15 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
       }
       //    });
     }
-#endif // DEBUG_2
+  #endif // DEBUG_2
 
     cl::sycl::event jw_event =
         Jaccard_JwKernel<vertex_t, edge_t, weight_t>::invoke(e, weight_i, weight_s, weight_j, q);
-#ifdef DEBUG_2
+  #ifdef DEBUG_2
     q.wait();
-#endif // DEBUG_2
+  #endif // DEBUG_2
 
-#ifdef EVENT_PROFILE
+  #ifdef EVENT_PROFILE
     try {
       wait_and_print(sum, "VCRowSum")
     } catch (sycl::exception e) {
@@ -893,7 +986,7 @@ int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
     } catch (sycl::exception e) {
       std::cerr << "SYCL Exception while waiting for VC Weights\n\t" << e.what() << std::endl;
     }
-#endif // EVENT_PROFILE
+  #endif // EVENT_PROFILE
   }
   return 0;
 }
@@ -921,9 +1014,11 @@ int jaccard_pairs(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr
 
   return 0;
 }
+#endif // ENTRYPOINTS
 } // namespace detail
 
-#ifndef DISABLE_WEIGHTED
+#ifdef ENTRYPOINTS
+  #ifndef DISABLE_WEIGHTED
 template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights,
              cl::sycl::buffer<WT> &result, cl::sycl::queue &q) {
@@ -937,9 +1032,9 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights,
       weight_i, weight_s, dest_ind, result, q);
   // Buffers autodestruct at end of function scope
 }
-#endif // DISABLE_WEIGHTED
+  #endif // DISABLE_WEIGHTED
 
-#ifndef DISABLE_UNWEIGHTED
+  #ifndef DISABLE_UNWEIGHTED
 template <bool edge_centric, typename VT, typename ET, typename WT>
 void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::sycl::queue &q) {
 
@@ -952,10 +1047,10 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::
       weight_i, weight_s, dest_ind, result, q);
   // Buffers autodestruct at end of function scope
 }
-#endif // DISABLE_UNWEIGHTED
+  #endif // DISABLE_UNWEIGHTED
 
-#ifndef DISABLE_LIST
-  #ifndef DISABLE_WEIGHTED
+  #ifndef DISABLE_LIST
+    #ifndef DISABLE_WEIGHTED
 template <typename VT, typename ET, typename WT>
 void jaccard_list(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, ET num_pairs,
                   cl::sycl::buffer<VT> &first, cl::sycl::buffer<VT> &second,
@@ -969,9 +1064,9 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights
                                                    &weights, work, weight_i, weight_s, result, q);
   // Buffers autodestruct at end of function scope
 }
-  #endif // DISABLE_WEIGHTED
+    #endif // DISABLE_WEIGHTED
 
-  #ifdef DISABLE_UNWEIGHTED
+    #ifdef DISABLE_UNWEIGHTED
 template <typename VT, typename ET, typename WT>
 void jaccard_list(GraphCSRView<VT, ET, WT> &graph, ET num_pairs, cl::sycl::buffer<VT> &first,
                   cl::sycl::buffer<VT> &second, cl::sycl::buffer<WT> &result, cl::sycl::queue &q) {
@@ -984,137 +1079,138 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph, ET num_pairs, cl::sycl::buffe
                                                     nullptr, work, weight_i, weight_s, result, q);
   // Buffers autodestruct at end of function scope
 }
-  #endif // DISABLE_UNWEIGHTED
-#endif   // DISABLE_LIST
+    #endif // DISABLE_UNWEIGHTED
+  #endif   // DISABLE_LIST
 
-#ifndef DISABLE_WEIGHTED
-template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
-                                                     cl::sycl::buffer<float> &,
-                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::queue &q);
-  #ifndef DISABLE_DP_INDEX
-template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
-                                                     cl::sycl::buffer<float> &,
-                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::queue &q);
-  #endif // DISABLE_DP_INDEX
-#endif   // DISABLE_WEIGHTED
-#ifndef DISABLE_UNWEIGHTED
-template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
-                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::queue &q);
-  #ifndef DISABLE_DP_INDEX
-template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
-                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
-                                                      cl::sycl::buffer<float> &,
-                                                      cl::sycl::queue &q);
-  #endif // DISABLE_DP_INDEX
-#endif   // DISABLE_UNWEIGHTED
-#ifndef DISABLE_LIST
   #ifndef DISABLE_WEIGHTED
+template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                                     cl::sycl::buffer<float> &,
+                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::queue &q);
+    #ifndef DISABLE_DP_INDEX
+template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                                     cl::sycl::buffer<float> &,
+                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::queue &q);
+    #endif // DISABLE_DP_INDEX
+  #endif   // DISABLE_WEIGHTED
+  #ifndef DISABLE_UNWEIGHTED
+template void jaccard<true, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::queue &q);
+    #ifndef DISABLE_DP_INDEX
+template void jaccard<true, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
+                                                      cl::sycl::buffer<float> &,
+                                                      cl::sycl::queue &q);
+    #endif // DISABLE_DP_INDEX
+  #endif   // DISABLE_UNWEIGHTED
+  #ifndef DISABLE_LIST
+    #ifndef DISABLE_WEIGHTED
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     cl::sycl::buffer<float> &, int32_t,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-    #ifndef DISABLE_DP_INDEX
+      #ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     cl::sycl::buffer<float> &, int64_t,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-    #endif // DISABLE_DP_INDEX
-  #endif   // DISABLE_WEIGHTED
-  #ifndef DISABLE_UNWEIGHTED
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_WEIGHTED
+    #ifndef DISABLE_UNWEIGHTED
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     int32_t, cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-    #ifndef DISABLE_DP_INDEX
+      #ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     int64_t, cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<float> &, cl::sycl::queue &q);
-    #endif // DISABLE_DP_INDEX
-  #endif   // DISABLE_UNWEIGHTED
-#endif     // DISABLE_LIST
-#ifndef DISABLE_DP_WEIGHT
-  #ifndef DISABLE_WEIGHTED
-template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::queue &q);
-template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::queue &q);
-    #ifndef DISABLE_DP_INDEX
-template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::queue &q);
-template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::queue &q);
-    #endif // DISABLE_DP_INDEX
-  #endif   // DISABLE_WEIGHTED
-  #ifndef DISABLE_UNWEIGHTED
-template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::queue &q);
-template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::queue &q);
-    #ifndef DISABLE_DP_INDEX
-template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
-                                                      cl::sycl::buffer<double> &,
-                                                      cl::sycl::queue &q);
-template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
-                                                       cl::sycl::buffer<double> &,
-                                                       cl::sycl::queue &q);
-    #endif // DISABLE_DP_INDEX
-  #endif   // DISABLE_UNWEIGHTED
-  #ifndef DISABLE_LIST
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_UNWEIGHTED
+  #endif     // DISABLE_LIST
+  #ifndef DISABLE_DP_WEIGHT
     #ifndef DISABLE_WEIGHTED
+template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::queue &q);
+      #ifndef DISABLE_DP_INDEX
+template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::queue &q);
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_WEIGHTED
+    #ifndef DISABLE_UNWEIGHTED
+template void jaccard<true, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::queue &q);
+template void jaccard<false, int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::queue &q);
+      #ifndef DISABLE_DP_INDEX
+template void jaccard<true, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                      cl::sycl::buffer<double> &,
+                                                      cl::sycl::queue &q);
+template void jaccard<false, int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
+                                                       cl::sycl::buffer<double> &,
+                                                       cl::sycl::queue &q);
+      #endif // DISABLE_DP_INDEX
+    #endif   // DISABLE_UNWEIGHTED
+    #ifndef DISABLE_LIST
+      #ifndef DISABLE_WEIGHTED
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      cl::sycl::buffer<double> &, int32_t,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
-      #ifndef DISABLE_DP_INDEX
+        #ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      cl::sycl::buffer<double> &, int64_t,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
-      #endif // DISABLE_DP_INDEX
-    #endif   // DISABLE_WEIGHTED
-    #ifndef DISABLE_UNWEIGHTED
+        #endif // DISABLE_DP_INDEX
+      #endif   // DISABLE_WEIGHTED
+      #ifndef DISABLE_UNWEIGHTED
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      int32_t, cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
-      #ifndef DISABLE_DP_INDEX
+        #ifndef DISABLE_DP_INDEX
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      int64_t, cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<double> &,
                                                      cl::sycl::queue &q);
-      #endif // DISABLE_DP_INDEX
-    #endif   // DISABLE_UNWEIGHTED
-  #endif     // DISABLE_LIST
-#endif       // DISABLE_DP_WEIGHT
+        #endif // DISABLE_DP_INDEX
+      #endif   // DISABLE_UNWEIGHTED
+    #endif     // DISABLE_LIST
+  #endif       // DISABLE_DP_WEIGHT
+#endif         // ENTRYPOINTS
 } // namespace sygraph
