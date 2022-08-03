@@ -47,7 +47,9 @@ public:
   FillKernel(cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> ptr, T value, size_t n)
       : ptr{ptr}, value{value}, n{n} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  static const cl::sycl::event invoke(size_t n, cl::sycl::buffer<T> &x, T value,
+                                      cl::sycl::queue &q);
 };
 
 namespace sygraph {
@@ -74,29 +76,35 @@ class Jaccard_RowSumKernel {
       shfl_temp;
 
 public:
-  Jaccard_RowSumKernel<true>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
-                         cl::sycl::access::target::local>
-          shfl_temp)
+  template <typename = std::enable_if<weighted>>
+  Jaccard_RowSumKernel(vertex_t n,
+                       cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+                       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+                       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+                       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+                       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                                          cl::sycl::access::target::local>
+                           shfl_temp)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, shfl_temp{shfl_temp} {
   }
   // When not using weights, we don't care about v
-  Jaccard_RowSumKernel<false>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
-                         cl::sycl::access::target::local>
-          shfl_temp)
+  template <typename = std::enable_if<!weighted>>
+  Jaccard_RowSumKernel(vertex_t n,
+                       cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+                       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+                       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+                       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                                          cl::sycl::access::target::local>
+                           shfl_temp)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp} {
   }
   // Volume of neighboors (*weight_s)
   // Must be marked external since main.cpp uses it
   SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<2> tid_info) const;
+  static const cl::sycl::event invoke(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
+                                      cl::sycl::buffer<vertex_t> &csrInd,
+                                      cl::sycl::buffer<weight_t> *weight_in,
+                                      cl::sycl::buffer<weight_t> &work, cl::sycl::queue &q);
 };
 
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
@@ -120,26 +128,32 @@ class Jaccard_IsKernel {
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
 
 public:
-  Jaccard_IsKernel<true>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
+  template <typename = std::enable_if<weighted>>
+  Jaccard_IsKernel(vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+                   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, weight_i{weight_i}, weight_s{
                                                                                         weight_s} {
   }
   // When not using weights, we don't care about v
-  Jaccard_IsKernel<false>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
+  template <typename = std::enable_if<!weighted>>
+  Jaccard_IsKernel(vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+                   cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
       : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<3> tid_info) const;
+  static const cl::sycl::event invoke(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
+                                      cl::sycl::buffer<vertex_t> &csrInd,
+                                      cl::sycl::buffer<weight_t> *weight_in,
+                                      cl::sycl::buffer<weight_t> &work,
+                                      cl::sycl::buffer<weight_t> &weight_i,
+                                      cl::sycl::buffer<weight_t> &weight_s, cl::sycl::queue &q);
 };
 
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
@@ -166,7 +180,8 @@ class Jaccard_IsPairsKernel {
   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
 
 public:
-  Jaccard_IsPairsKernel<true>(
+  template <typename = std::enable_if<weighted>>
+  Jaccard_IsPairsKernel(
       edge_t num_pairs, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
@@ -179,7 +194,8 @@ public:
         second_pair{second_pair}, v{v}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
   // When not using weights, we don't care about v
-  Jaccard_IsPairsKernel<false>(
+  template <typename = std::enable_if<!weighted>>
+  Jaccard_IsPairsKernel(
       edge_t num_pairs, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
       cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
@@ -190,7 +206,15 @@ public:
       : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair},
         second_pair{second_pair}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
   }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<3> tid_info) const;
+  static const cl::sycl::event
+  invoke(vertex_t n, edge_t num_pairs, cl::sycl::buffer<edge_t> &csrPtr,
+         cl::sycl::buffer<vertex_t> &csrInd, cl::sycl::buffer<vertex_t> &first_pair,
+         cl::sycl::buffer<vertex_t> &second_pair, cl::sycl::buffer<weight_t> *weight_in,
+         cl::sycl::buffer<weight_t> &work, cl::sycl::buffer<weight_t> &weight_i,
+         cl::sycl::buffer<weight_t> &weight_s,
+
+         cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q);
 };
 
 // Jaccard  weights (*weight)
@@ -207,7 +231,10 @@ public:
                    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
       : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  static const cl::sycl::event invoke(edge_t e, cl::sycl::buffer<weight_t> &weight_i,
+                                      cl::sycl::buffer<weight_t> &weight_s,
+                                      cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q);
 };
 
 template <typename vertex_t, typename edge_t, typename weight_t>
@@ -225,7 +252,10 @@ public:
                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  static const cl::sycl::event invoke(edge_t e, vertex_t n, cl::sycl::buffer<edge_t> &csrPtr,
+                                      cl::sycl::buffer<vertex_t> &dest_ind,
+                                      cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q);
 };
 
 // Edge-centric-unweighted-kernel
@@ -246,7 +276,11 @@ public:
       cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
       : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
   }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<1> tid_info) const;
+  static const cl::sycl::event invoke(edge_t e, vertex_t n, cl::sycl::buffer<edge_t> &csrPtr,
+                                      cl::sycl::buffer<vertex_t> &csrInd,
+                                      cl::sycl::buffer<vertex_t> &dest_ind,
+                                      cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q);
 };
 
 } // namespace detail
