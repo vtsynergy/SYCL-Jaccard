@@ -33,6 +33,7 @@
   // Sometimes it's this path (2021.2.0)
   //#include <CL/sycl/INTEL/fpga_extensions.hpp>
   #endif
+  #include "jaccard.hpp"
   #include "standalone_algorithms.hpp"
   #include "standalone_csr.hpp"
   #include <iostream>
@@ -56,27 +57,17 @@ constexpr inline unsigned int warp_full_mask() {
 }
 
 // Kernels are implemented as functors or lambdas in SYCL
+// Custom Thrust simplifications
 template <typename T>
-class FillKernel {
-  cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> ptr;
-  T value;
-  size_t n;
-
-public:
-  FillKernel(cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> ptr, T value, size_t n)
-      : ptr{ptr}, value{value}, n{n} {
+const void FillKernel<T>::operator()(cl::sycl::nd_item<1> tid_info) const {
+  // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
+  size_t idx = tid_info.get_global_id(0);
+  // equivalent to: incr = blockDim.x*gridDim.x;
+  size_t incr = tid_info.get_global_range(0);
+  for (; idx < n; idx += incr) {
+    ptr[idx] = value;
   }
-  // Custom Thrust simplifications
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
-    // equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
-    size_t idx = tid_info.get_global_id(0);
-    // equivalent to: incr = blockDim.x*gridDim.x;
-    size_t incr = tid_info.get_global_range(0);
-    for (; idx < n; idx += incr) {
-      ptr[idx] = value;
-    }
-  }
-};
+}
 
 template <typename T>
 cl::sycl::event fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q) {
@@ -151,48 +142,10 @@ double myAtomicAdd(cl::sycl::atomic<uint64_t> &address, double val) {
 
 namespace sygraph {
 namespace detail {
-
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_IsKernel {
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
-// FIXME, what to do if this isn't present?
-#ifdef NEEDS_NULL_DEVICE_PTR
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
-                     cl::sycl::device_ptr<std::nullptr_t>>
-      v;
-#else
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
-                     std::nullptr_t>
-      v;
-#endif
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
-
-public:
-  Jaccard_IsKernel<true>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
-      : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, weight_i{weight_i}, weight_s{
-                                                                                        weight_s} {
-  }
-  // When not using weights, we don't care about v
-  Jaccard_IsKernel<false>(
-      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
-      : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
-  }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+    cl::sycl::nd_item<3> tid_info) const {
     edge_t i, j, Ni, Nj;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -249,25 +202,25 @@ public:
             // FIXME: Update to SYCL 2020 atomic_refs
             if constexpr (std::is_same<weight_t, double>::value) {
               // if constexpr (typeid(weight_t) == typeid(double)) {
-#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
               cl::sycl::atomic<uint64_t> atom_weight{
                   cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
               myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
               cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
               atom_weight.fetch_add(ref_val);
-#endif
+  #endif
             }
             // if constexpr (typeid(weight_t) == typeid(float)) {
             if constexpr (std::is_same<weight_t, float>::value) {
-#ifdef EMULATE_ATOMIC_ADD_FLOAT
+  #ifdef EMULATE_ATOMIC_ADD_FLOAT
               cl::sycl::atomic<uint32_t> atom_weight{
                   cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
               myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
               cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
               atom_weight.fetch_add(ref_val);
-#endif
+  #endif
             }
             // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
             // atomics atomicAdd(&weight_i[j], ref_val);
@@ -276,24 +229,11 @@ public:
       }
     }
   }
-};
 
 template <typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_ec_scan {
-  edge_t e;
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
-
-public:
-  Jaccard_ec_scan(edge_t e, vertex_t n,
-                  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-                  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read_write> dest_ind,
-                  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
-      : e{e}, n{n}, csrPtr{csrPtr}, dest_ind{dest_ind}, weight_j{weight_j} {
-  }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+const void
+  Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const
+  {
     edge_t j, i;
     for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
       for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
@@ -302,27 +242,12 @@ public:
       }
     }
   }
-};
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_ec_unweighted {
-  edge_t e;
-  vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j;
-
-public:
-  Jaccard_ec_unweighted(
-      edge_t e, vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> dest_ind,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_j)
-      : e{e}, n{n}, csrPtr{csrPtr}, csrInd{csrInd}, dest_ind{dest_ind}, weight_j{weight_j} {
-  }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+  const void
+  Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const
+  {
     edge_t i, j, Ni, Nj, tid;
     vertex_t row, col;
     vertex_t ref, cur, ref_col, cur_col, match;
@@ -361,57 +286,12 @@ public:
       weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
     }
   }
-};
 
-// Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
-// Using list of node pairs
+  // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
+  // Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_IsPairsKernel {
-  edge_t num_pairs;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair;
-// FIXME, what to do if this isn't present?
-#ifdef NEEDS_NULL_DEVICE_PTR
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
-                     cl::sycl::device_ptr<std::nullptr_t>>
-      v;
-#else
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
-                     std::nullptr_t>
-      v;
-#endif
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
-
-public:
-  Jaccard_IsPairsKernel<true>(
-      edge_t num_pairs, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
-      : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair},
-        second_pair{second_pair}, v{v}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
-  }
-  // When not using weights, we don't care about v
-  Jaccard_IsPairsKernel<false>(
-      edge_t num_pairs, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
-      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
-      : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair},
-        second_pair{second_pair}, work{work}, weight_i{weight_i}, weight_s{weight_s} {
-  }
-  const void operator()(cl::sycl::nd_item<3> tid_info) const {
+  const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
+      cl::sycl::nd_item<3> tid_info) const {
     edge_t i, idx, Ni, Nj, match;
     vertex_t row, col, ref, cur, ref_col, cur_col;
     weight_t ref_val;
@@ -462,25 +342,25 @@ public:
           // FIXME: Update to SYCL 2020 atomic_refs
           if constexpr (std::is_same<weight_t, double>::value) {
             // if constexpr (typeid(weight_t) == typeid(double)) {
-#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
             cl::sycl::atomic<uint64_t> atom_weight{
                 cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[i]}};
             myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
             cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
             atom_weight.fetch_add(ref_val);
-#endif
+  #endif
           }
           // if constexpr (typeid(weight_t) == typeid(float)) {
           if constexpr (std::is_same<weight_t, float>::value) {
-#ifdef EMULATE_ATOMIC_ADD_FLOAT
+  #ifdef EMULATE_ATOMIC_ADD_FLOAT
             cl::sycl::atomic<uint32_t> atom_weight{
                 cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[i]}};
             myAtomicAdd(atom_weight, ref_val);
-#else
+  #else
             cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
             atom_weight.fetch_add(ref_val);
-#endif
+  #endif
           }
           // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
           // atomics atomicAdd(&weight_i[j], ref_val);
@@ -488,23 +368,11 @@ public:
       }
     }
   }
-};
 
-// Jaccard  weights (*weight)
+  // Jaccard  weights (*weight)
 template <typename vertex_t, typename edge_t, typename weight_t>
-class Jaccard_JwKernel {
-  edge_t e;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j;
-
-public:
-  Jaccard_JwKernel(edge_t e, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i,
-                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s,
-                   cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
-      : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j} {
-  }
-  const void operator()(cl::sycl::nd_item<1> tid_info) const {
+  const void
+  Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
     edge_t j;
     weight_t Wi, Ws, Wu;
 
@@ -515,7 +383,6 @@ public:
       weight_j[j] = (Wi / Wu);
     }
   }
-};
 
 template <bool edge_centric, bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
