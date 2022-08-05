@@ -145,7 +145,7 @@ namespace detail {
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
-  cl::sycl::nd_item<3> tid_info) const {
+    cl::sycl::nd_item<3> tid_info) const {
   edge_t i, j, Ni, Nj;
   vertex_t row, col;
   vertex_t ref, cur, ref_col, cur_col, match;
@@ -286,8 +286,8 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
   }
 }
 
-  // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
-  // Using list of node pairs
+// Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
+// Using list of node pairs
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
@@ -368,20 +368,20 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
   }
 }
 
-  // Jaccard  weights (*weight)
+// Jaccard  weights (*weight)
 template <typename vertex_t, typename edge_t, typename weight_t>
-  const void
-  Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
-    edge_t j;
-    weight_t Wi, Ws, Wu;
+const void
+Jaccard_JwKernel<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
+  edge_t j;
+  weight_t Wi, Ws, Wu;
 
-    for (j = tid_info.get_global_id(0); j < e; j += tid_info.get_global_range(0)) {
-      Wi = weight_i[j];
-      Ws = weight_s[j];
-      Wu = Ws - Wi;
-      weight_j[j] = (Wi / Wu);
-    }
+  for (j = tid_info.get_global_id(0); j < e; j += tid_info.get_global_range(0)) {
+    Wi = weight_i[j];
+    Ws = weight_s[j];
+    Wu = Ws - Wi;
+    weight_j[j] = (Wi / Wu);
   }
+}
 
 template <bool edge_centric, bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 int jaccard(vertex_t n, edge_t e, cl::sycl::buffer<edge_t> &csrPtr,
