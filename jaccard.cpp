@@ -232,16 +232,16 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
 
 template <typename vertex_t, typename edge_t, typename weight_t>
 const void
-  Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const
+Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
+  edge_t j, i;
+  for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0))
   {
-    edge_t j, i;
-    for (j = tid_info.get_global_id(0); j < n; j += tid_info.get_global_range(0)) {
-      for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
-        dest_ind[i] = j;
-        weight_j[i] = 0;
-      }
+    for (i = csrPtr[j]; i < csrPtr[j + 1]; i++) {
+      dest_ind[i] = j;
+      weight_j[i] = 0;
     }
   }
+}
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
