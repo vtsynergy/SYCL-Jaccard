@@ -145,90 +145,90 @@ namespace detail {
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
-    cl::sycl::nd_item<3> tid_info) const {
-    edge_t i, j, Ni, Nj;
-    vertex_t row, col;
-    vertex_t ref, cur, ref_col, cur_col, match;
-    weight_t ref_val;
+  cl::sycl::nd_item<3> tid_info) const {
+  edge_t i, j, Ni, Nj;
+  vertex_t row, col;
+  vertex_t ref, cur, ref_col, cur_col, match;
+  weight_t ref_val;
 
-    vertex_t row_start = tid_info.get_global_id(0);
-    vertex_t row_incr = tid_info.get_global_range(0);
-    edge_t j_off = tid_info.get_global_id(1);
-    edge_t j_incr = tid_info.get_global_range(1);
-    edge_t i_off = tid_info.get_global_id(2);
-    edge_t i_incr = tid_info.get_global_range(2);
-    for (row = row_start; row < n; row += row_incr) {
-      for (j = csrPtr[row] + j_off; j < csrPtr[row + 1]; j += j_incr) {
-        col = csrInd[j];
-        // find which row has least elements (and call it reference row)
-        Ni = csrPtr[row + 1] - csrPtr[row];
-        Nj = csrPtr[col + 1] - csrPtr[col];
-        ref = (Ni < Nj) ? row : col;
-        cur = (Ni < Nj) ? col : row;
+  vertex_t row_start = tid_info.get_global_id(0);
+  vertex_t row_incr = tid_info.get_global_range(0);
+  edge_t j_off = tid_info.get_global_id(1);
+  edge_t j_incr = tid_info.get_global_range(1);
+  edge_t i_off = tid_info.get_global_id(2);
+  edge_t i_incr = tid_info.get_global_range(2);
+  for (row = row_start; row < n; row += row_incr) {
+    for (j = csrPtr[row] + j_off; j < csrPtr[row + 1]; j += j_incr) {
+      col = csrInd[j];
+      // find which row has least elements (and call it reference row)
+      Ni = csrPtr[row + 1] - csrPtr[row];
+      Nj = csrPtr[col + 1] - csrPtr[col];
+      ref = (Ni < Nj) ? row : col;
+      cur = (Ni < Nj) ? col : row;
 
-        // compute new sum weights
-        weight_s[j] = work[row] + work[col];
+      // compute new sum weights
+      weight_s[j] = work[row] + work[col];
 
-        // compute new intersection weights
-        // search for the element with the same column index in the reference row
-        for (i = csrPtr[ref] + i_off; i < csrPtr[ref + 1]; i += i_incr) {
-          match = -1;
-          ref_col = csrInd[i];
-          // Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
-          if constexpr (weighted) {
-            ref_val = v[ref_col];
+      // compute new intersection weights
+      // search for the element with the same column index in the reference row
+      for (i = csrPtr[ref] + i_off; i < csrPtr[ref + 1]; i += i_incr) {
+        match = -1;
+        ref_col = csrInd[i];
+        // Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
+        if constexpr (weighted) {
+          ref_val = v[ref_col];
+        } else {
+          ref_val = 1.0;
+        }
+
+        // binary search (column indices are sorted within each row)
+        edge_t left = csrPtr[cur];
+        edge_t right = csrPtr[cur + 1] - 1;
+        while (left <= right) {
+          edge_t middle = (left + right) >> 1;
+          cur_col = csrInd[middle];
+          if (cur_col > ref_col) {
+            right = middle - 1;
+          } else if (cur_col < ref_col) {
+            left = middle + 1;
           } else {
-            ref_val = 1.0;
+            match = middle;
+            break;
           }
+        }
 
-          // binary search (column indices are sorted within each row)
-          edge_t left = csrPtr[cur];
-          edge_t right = csrPtr[cur + 1] - 1;
-          while (left <= right) {
-            edge_t middle = (left + right) >> 1;
-            cur_col = csrInd[middle];
-            if (cur_col > ref_col) {
-              right = middle - 1;
-            } else if (cur_col < ref_col) {
-              left = middle + 1;
-            } else {
-              match = middle;
-              break;
-            }
+        // if the element with the same column index in the reference row has been found
+        if (match != -1) {
+          // FIXME: Update to SYCL 2020 atomic_refs
+          if constexpr (std::is_same<weight_t, double>::value) {
+            // if constexpr (typeid(weight_t) == typeid(double)) {
+#ifdef EMULATE_ATOMIC_ADD_DOUBLE
+            cl::sycl::atomic<uint64_t> atom_weight{
+                cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
+            myAtomicAdd(atom_weight, ref_val);
+#else
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
+            atom_weight.fetch_add(ref_val);
+#endif
           }
-
-          // if the element with the same column index in the reference row has been found
-          if (match != -1) {
-            // FIXME: Update to SYCL 2020 atomic_refs
-            if constexpr (std::is_same<weight_t, double>::value) {
-              // if constexpr (typeid(weight_t) == typeid(double)) {
-  #ifdef EMULATE_ATOMIC_ADD_DOUBLE
-              cl::sycl::atomic<uint64_t> atom_weight{
-                  cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
-              myAtomicAdd(atom_weight, ref_val);
-  #else
-              cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
-              atom_weight.fetch_add(ref_val);
-  #endif
-            }
-            // if constexpr (typeid(weight_t) == typeid(float)) {
-            if constexpr (std::is_same<weight_t, float>::value) {
-  #ifdef EMULATE_ATOMIC_ADD_FLOAT
-              cl::sycl::atomic<uint32_t> atom_weight{
-                  cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
-              myAtomicAdd(atom_weight, ref_val);
-  #else
-              cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
-              atom_weight.fetch_add(ref_val);
-  #endif
-            }
-            // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
-            // atomics atomicAdd(&weight_i[j], ref_val);
+          // if constexpr (typeid(weight_t) == typeid(float)) {
+          if constexpr (std::is_same<weight_t, float>::value) {
+#ifdef EMULATE_ATOMIC_ADD_FLOAT
+            cl::sycl::atomic<uint32_t> atom_weight{
+                cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
+            myAtomicAdd(atom_weight, ref_val);
+#else
+            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
+            atom_weight.fetch_add(ref_val);
+#endif
           }
+          // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
+          // atomics atomicAdd(&weight_i[j], ref_val);
         }
       }
     }
   }
+}
 
 template <typename vertex_t, typename edge_t, typename weight_t>
 const void
