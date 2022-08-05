@@ -245,47 +245,46 @@ Jaccard_ec_scan<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid
 
 // Edge-centric-unweighted-kernel
 template <typename vertex_t, typename edge_t, typename weight_t>
-  const void
-  Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const
-  {
-    edge_t i, j, Ni, Nj, tid;
-    vertex_t row, col;
-    vertex_t ref, cur, ref_col, cur_col, match;
-    weight_t ref_val;
+const void
+Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
+  edge_t i, j, Ni, Nj, tid;
+  vertex_t row, col;
+  vertex_t ref, cur, ref_col, cur_col, match;
+  weight_t ref_val;
 
-    for (tid = tid_info.get_global_id(0); tid < e; tid += tid_info.get_global_range(0)) {
-      row = csrInd[tid];
-      col = dest_ind[tid];
+  for (tid = tid_info.get_global_id(0); tid < e; tid += tid_info.get_global_range(0)) {
+    row = csrInd[tid];
+    col = dest_ind[tid];
 
-      // find which row has least elements (and call it reference row)
-      Ni = csrPtr[row + 1] - csrPtr[row];
-      Nj = csrPtr[col + 1] - csrPtr[col];
-      ref = (Ni < Nj) ? row : col;
-      cur = (Ni < Nj) ? col : row;
+    // find which row has least elements (and call it reference row)
+    Ni = csrPtr[row + 1] - csrPtr[row];
+    Nj = csrPtr[col + 1] - csrPtr[col];
+    ref = (Ni < Nj) ? row : col;
+    cur = (Ni < Nj) ? col : row;
 
-      // compute new sum weights
-      for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
-        ref_col = csrInd[i];
-        // binary search (column indices are sorted within each row)
-        edge_t left = csrPtr[cur];
-        edge_t right = csrPtr[cur + 1] - 1;
-        while (left <= right) {
-          edge_t middle = (left + right) >> 1;
-          cur_col = csrInd[middle];
-          if (cur_col > ref_col) {
-            right = middle - 1;
-          } else if (cur_col < ref_col) {
-            left = middle + 1;
-          } else {
-            weight_j[tid] = weight_j[tid] + 1;
-            break;
-          }
+    // compute new sum weights
+    for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
+      ref_col = csrInd[i];
+      // binary search (column indices are sorted within each row)
+      edge_t left = csrPtr[cur];
+      edge_t right = csrPtr[cur + 1] - 1;
+      while (left <= right) {
+        edge_t middle = (left + right) >> 1;
+        cur_col = csrInd[middle];
+        if (cur_col > ref_col) {
+          right = middle - 1;
+        } else if (cur_col < ref_col) {
+          left = middle + 1;
+        } else {
+          weight_j[tid] = weight_j[tid] + 1;
+          break;
         }
       }
-      // compute JS
-      weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
     }
+    // compute JS
+    weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
   }
+}
 
   // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
   // Using list of node pairs
