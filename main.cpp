@@ -15,6 +15,7 @@
  */
 
 #include "filetypes.hpp"
+#include "jaccard.hpp"
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"

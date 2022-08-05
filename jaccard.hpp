@@ -52,6 +52,53 @@ public:
 
 namespace sygraph {
 namespace detail {
+template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
+class Jaccard_RowSumKernel {
+  vertex_t n;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
+  // FIXME, with std::conditional_t we should be able to simplify out some of the code paths in the
+  // other weight-branching kernels
+  #ifdef NEEDS_NULL_DEVICE_PTR
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
+                     cl::sycl::device_ptr<std::nullptr_t>>
+      v;
+  #else
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>,
+                     std::nullptr_t>
+      v;
+  #endif
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                     cl::sycl::access::target::local>
+      shfl_temp;
+
+public:
+  Jaccard_RowSumKernel<true>(
+      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                         cl::sycl::access::target::local>
+          shfl_temp)
+      : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, shfl_temp{shfl_temp} {
+  }
+  // When not using weights, we don't care about v
+  Jaccard_RowSumKernel<false>(
+      vertex_t n, cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+      cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write,
+                         cl::sycl::access::target::local>
+          shfl_temp)
+      : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp} {
+  }
+  // Volume of neighboors (*weight_s)
+  // Must be marked external since main.cpp uses it
+  SYCL_EXTERNAL const void operator()(cl::sycl::nd_item<2> tid_info) const;
+};
+
 // Volume of intersections (*weight_i) and cumulated volume of neighboors (*weight_s)
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_IsKernel {
