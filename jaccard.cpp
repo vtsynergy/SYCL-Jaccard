@@ -317,7 +317,7 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
   edge_t i, j, Ni, Nj;
   vertex_t row, col;
-  vertex_t ref, cur, ref_col, cur_col, match;
+  vertex_t ref, cur, ref_col, cur_col;
   weight_t ref_val;
 
   vertex_t row_start = tid_info.get_global_id(0);
@@ -338,10 +338,10 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
       // compute new sum weights
       weight_s[j] = work[row] + work[col];
 
+      weight_t isect_sum = 0.0;
       // compute new intersection weights
       // search for the element with the same column index in the reference row
       for (i = csrPtr[ref] + i_off; i < csrPtr[ref + 1]; i += i_incr) {
-        match = -1;
         ref_col = csrInd[i];
         // Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
         if constexpr (weighted) {
@@ -361,39 +361,38 @@ const void Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
           } else if (cur_col < ref_col) {
             left = middle + 1;
           } else {
-            match = middle;
+            isect_sum = isect_sum + ref_val;
             break;
           }
         }
-
-        // if the element with the same column index in the reference row has been found
-        if (match != -1) {
-          // FIXME: Update to SYCL 2020 atomic_refs
-          if constexpr (std::is_same<weight_t, double>::value) {
-            // if constexpr (typeid(weight_t) == typeid(double)) {
+      }
+      // if the element with the same column index in the reference row has been found
+      if (isect_sum != 0.0) {
+        // FIXME: Update to SYCL 2020 atomic_refs
+        if constexpr (std::is_same<weight_t, double>::value) {
+          // if constexpr (typeid(weight_t) == typeid(double)) {
 #ifdef EMULATE_ATOMIC_ADD_DOUBLE
-            cl::sycl::atomic<uint64_t> atom_weight{
-                cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[j]}};
-            myAtomicAdd(atom_weight, ref_val);
+          cl::sycl::atomic<uint64_t> atom_weight{
+              cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[i]}};
+          myAtomicAdd(atom_weight, isect_sum);
 #else
-            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
-            atom_weight.fetch_add(ref_val);
+          cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
+          atom_weight.fetch_add(isect_sum);
 #endif
-          }
-          // if constexpr (typeid(weight_t) == typeid(float)) {
-          if constexpr (std::is_same<weight_t, float>::value) {
-#ifdef EMULATE_ATOMIC_ADD_FLOAT
-            cl::sycl::atomic<uint32_t> atom_weight{
-                cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[j]}};
-            myAtomicAdd(atom_weight, ref_val);
-#else
-            cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[j]}};
-            atom_weight.fetch_add(ref_val);
-#endif
-          }
-          // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
-          // atomics atomicAdd(&weight_i[j], ref_val);
         }
+        // if constexpr (typeid(weight_t) == typeid(float)) {
+        if constexpr (std::is_same<weight_t, float>::value) {
+#ifdef EMULATE_ATOMIC_ADD_FLOAT
+          cl::sycl::atomic<uint32_t> atom_weight{
+              cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[i]}};
+          myAtomicAdd(atom_weight, isect_sum);
+#else
+          cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
+          atom_weight.fetch_add(isect_sum);
+#endif
+        }
+        // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
+        // atomics atomicAdd(&weight_i[j], isect_sum);
       }
     }
   }
@@ -462,7 +461,7 @@ const cl::sycl::event Jaccard_IsKernel<weighted, vertex_t, edge_t, weight_t>::in
 template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator()(
     cl::sycl::nd_item<3> tid_info) const {
-  edge_t i, idx, Ni, Nj, match;
+  edge_t i, idx, Ni, Nj;
   vertex_t row, col, ref, cur, ref_col, cur_col;
   weight_t ref_val;
 
@@ -479,11 +478,11 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
     // compute new sum weights
     weight_s[idx] = work[row] + work[col];
 
+    weight_t isect_sum = 0.0;
     // compute new intersection weights
     // search for the element with the same column index in the reference row
     for (i = csrPtr[ref] + tid_info.get_global_id(2); i < csrPtr[ref + 1];
          i += tid_info.get_global_range(2)) {
-      match = -1;
       ref_col = csrInd[i];
       if constexpr (weighted) {
         ref_val = v[ref_col];
@@ -502,23 +501,23 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
         } else if (cur_col < ref_col) {
           left = middle + 1;
         } else {
-          match = middle;
+          isect_sum = isect_sum + ref_val;
           break;
         }
       }
 
       // if the element with the same column index in the reference row has been found
-      if (match != -1) {
+      if (isect_sum != 0.0) {
         // FIXME: Update to SYCL 2020 atomic_refs
         if constexpr (std::is_same<weight_t, double>::value) {
           // if constexpr (typeid(weight_t) == typeid(double)) {
 #ifdef EMULATE_ATOMIC_ADD_DOUBLE
           cl::sycl::atomic<uint64_t> atom_weight{
               cl::sycl::global_ptr<uint64_t>{(uint64_t *)&weight_i[i]}};
-          myAtomicAdd(atom_weight, ref_val);
+          myAtomicAdd(atom_weight, isect_sum);
 #else
           cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
-          atom_weight.fetch_add(ref_val);
+          atom_weight.fetch_add(isect_sum);
 #endif
         }
         // if constexpr (typeid(weight_t) == typeid(float)) {
@@ -526,14 +525,14 @@ const void Jaccard_IsPairsKernel<weighted, vertex_t, edge_t, weight_t>::operator
 #ifdef EMULATE_ATOMIC_ADD_FLOAT
           cl::sycl::atomic<uint32_t> atom_weight{
               cl::sycl::global_ptr<uint32_t>{(uint32_t *)&weight_i[i]}};
-          myAtomicAdd(atom_weight, ref_val);
+          myAtomicAdd(atom_weight, isect_sum);
 #else
           cl::sycl::atomic<weight_t> atom_weight{cl::sycl::global_ptr<weight_t>{&weight_i[i]}};
-          atom_weight.fetch_add(ref_val);
+          atom_weight.fetch_add(isect_sum);
 #endif
         }
         // FIXME: Use the below with a sycl::atomic once hipSYCL supports the 2020 Floating
-        // atomics atomicAdd(&weight_i[j], ref_val);
+        // atomics atomicAdd(&weight_i[j], isect_sum);
       }
     }
   }
@@ -705,7 +704,7 @@ const void
 Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<1> tid_info) const {
   edge_t i, j, Ni, Nj, tid;
   vertex_t row, col;
-  vertex_t ref, cur, ref_col, cur_col, match;
+  vertex_t ref, cur, ref_col, cur_col;
   weight_t ref_val;
 
   for (tid = tid_info.get_global_id(0); tid < e; tid += tid_info.get_global_range(0)) {
@@ -718,6 +717,7 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
     ref = (Ni < Nj) ? row : col;
     cur = (Ni < Nj) ? col : row;
 
+    weight_t isect_sum = 0;
     // compute new sum weights
     for (i = csrPtr[ref]; i < csrPtr[ref + 1]; i++) {
       ref_col = csrInd[i];
@@ -732,13 +732,13 @@ Jaccard_ec_unweighted<vertex_t, edge_t, weight_t>::operator()(cl::sycl::nd_item<
         } else if (cur_col < ref_col) {
           left = middle + 1;
         } else {
-          weight_j[tid] = weight_j[tid] + 1;
+          isect_sum = isect_sum + 1;
           break;
         }
       }
     }
     // compute JS
-    weight_j[tid] = weight_j[tid] / ((weight_t)(Ni + Nj) - weight_j[tid]);
+    weight_j[tid] = isect_sum / ((weight_t)(Ni + Nj) - isect_sum);
   }
 }
 
