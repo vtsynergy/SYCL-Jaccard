@@ -75,12 +75,14 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fsycl -D SYCL_1_2_1 -D ICX -DEVENT_PROFILE -DNEEDS_NULL_DEVICE_PTR
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
-  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee -Xsboard=intel_s10sx_pac:pac_s10
   JACCARD_REUSE=-reuse-exe=jaccardSYCL
+  EC_REUSE=-reuse-exe=jaccardSYCL_ec.so
+  CUGRAPH_REUSE=-reuse-exe=jaccardSYCL_cugraph.so
   COMPARE_REUSE=-reuse-exe=compareCoords
   CONVERT_REUSE=-reuse-exe=fileConvert
   HEADER_REUSE=-reuse-exe=readCSRHeader
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -DINTEL_FPGA_EXT -Xsclock=145MHz -Xsv -Xsrounding=ieee -Xsboard=intel_s10sx_pac:pac_s10
   endif
   ifeq ($(FPGA), INTEL_EMU)
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
@@ -116,7 +118,7 @@ filetypes.o: filetypes.cpp
 	$(SYCL) -o filetypes.o -c filetypes.cpp $(SYCL_C_FLAGS)
 
 jaccardSYCL_cugraph.so: jaccardSYCL_cugraph.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_cugraph.so jaccardSYCL_cugraph.o -fPIC -shared -D STANDALONE -DCUGRAPH_KERNELS -Wl,-rpath=$(CWD)
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_cugraph.so jaccardSYCL_cugraph.o $(CUGRAPH_REUSE) -fPIC -shared -D STANDALONE -DCUGRAPH_KERNELS -Wl,-rpath=$(CWD)
 #jaccardSYCL_cugraph.a: jaccardSYCL_cugraph.o
 #	ar r jaccardSYCL_cugraph.a jaccardSYCL_cugraph.o -v
 
@@ -124,7 +126,7 @@ jaccardSYCL_cugraph.o: jaccard.cpp standalone_csr.hpp jaccard.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL_cugraph.o -fPIC -c jaccard.cpp -D STANDALONE -DCUGRAPH_KERNELS
 
 jaccardSYCL_ec.so: jaccardSYCL_ec.o
-	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_ec.so jaccardSYCL_ec.o -fPIC -shared -D STANDALONE -DEC_KERNELS -Wl,-rpath=$(CWD)
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL_ec.so jaccardSYCL_ec.o $(EC_REUSE) -fPIC -shared -D STANDALONE -DEC_KERNELS -Wl,-rpath=$(CWD)
 #jaccardSYCL_ec.a: jaccardSYCL_ec.o
 #	ar r jaccardSYCL_ec.a jaccardSYCL_ec.o
 
