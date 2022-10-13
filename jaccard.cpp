@@ -41,7 +41,7 @@ constexpr inline unsigned int warp_full_mask() {
 //FIXME Revisit the barriers and fences and local storage with subgroups
 //FIXME revisit with SYCL group algorithms
 template <typename count_t, typename index_t, typename value_t>
-__inline__ value_t parallel_prefix_sum(cl::sycl::nd_item<2> const &tid_info, count_t n, cl::sycl::accessor<index_t, 1, cl::sycl::access::mode::read> const &ind, count_t ind_off, cl::sycl::accessor<value_t, 1, cl::sycl::access::mode::read> const &w, cl::sycl::accessor<value_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> const &shfl_temp)
+__inline__ value_t parallel_prefix_sum(cl::sycl::nd_item<2> const &tid_info, count_t n, cl::sycl::accessor<index_t, 1, cl::sycl::access::mode::read> ind, count_t ind_off, cl::sycl::accessor<value_t, 1, cl::sycl::access::mode::read> w, cl::sycl::accessor<value_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp)
 {
   count_t i, j, mn;
   value_t v, last;
@@ -123,11 +123,11 @@ group_barrier(tid_info.get_group());
 template <typename T>
 class FillKernel
 {
-  cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> &ptr;
+  cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> ptr;
   T value;
   size_t n;
 public:
-  FillKernel(cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> &ptr, T value, size_t n)
+  FillKernel(cl::sycl::accessor<T, 1, cl::sycl::access::mode::discard_write> ptr, T value, size_t n)
   : ptr{ptr}, value{value}, n{n}
   {
   }
@@ -216,28 +216,28 @@ template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_RowSumKernel
 {
   vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
   //FIXME, with std::conditional_t we should be able to simplify out some of the code paths in the other weight-branching kernels
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &, std::nullptr_t> v;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> const &shfl_temp;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read>, std::nullptr_t> v;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp;
 public:
   Jaccard_RowSumKernel<true>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &v,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> const &shfl_temp)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp)
   : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, shfl_temp{shfl_temp}
   {
   }
   //When not using weights, we don't care about v
   Jaccard_RowSumKernel<false>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> const &shfl_temp)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp)
   : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, shfl_temp{shfl_temp}
   {
   }
@@ -270,31 +270,31 @@ template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_IsKernel
 {
   vertex_t n;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
   //FIXME, what to do if this isn't present?
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &, std::nullptr_t> v;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , std::nullptr_t> v;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
 public:
   Jaccard_IsKernel<true>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &v,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
   : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, v{v}, work{work}, weight_i{weight_i}, weight_s{weight_s}
   {
   }
   //When not using weights, we don't care about v
   Jaccard_IsKernel<false>(vertex_t n,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
   : n{n}, csrInd{csrInd}, csrPtr{csrPtr}, work{work}, weight_i{weight_i}, weight_s{weight_s}
   {
   }
@@ -376,37 +376,37 @@ template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_IsPairsKernel
 {
   edge_t num_pairs;
-  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &first_pair;
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &second_pair;
+  cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair;
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair;
   //FIXME, what to do if this isn't present?
-  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &, std::nullptr_t> v;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s;
+  std::conditional_t<weighted, cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> , std::nullptr_t> v;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s;
 public:
   Jaccard_IsPairsKernel<true>(edge_t num_pairs,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &first_pair,
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &second_pair,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &v,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> v,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
   : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair}, second_pair{second_pair}, v{v}, work{work}, weight_i{weight_i}, weight_s{weight_s}
   {
   }
   //When not using weights, we don't care about v
   Jaccard_IsPairsKernel<false>(edge_t num_pairs,
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr,
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd,
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &first_pair,
-  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &second_pair,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i,
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s)
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr,
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd,
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair,
+  cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i,
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s)
   : num_pairs{num_pairs}, csrInd{csrInd}, csrPtr{csrPtr}, first_pair{first_pair}, second_pair{second_pair}, work{work}, weight_i{weight_i}, weight_s{weight_s}
   {
   }
@@ -480,14 +480,14 @@ template <bool weighted, typename vertex_t, typename edge_t, typename weight_t>
 class Jaccard_JwKernel
 {
   edge_t e;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_i;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_s;
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_j;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s;
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j;
 public:
   Jaccard_JwKernel(edge_t e,
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_i,
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_s,
-  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_j)
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i,
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s,
+  cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j)
   : e{e}, weight_i{weight_i}, weight_s{weight_s}, weight_j{weight_j}
   {
   }
@@ -526,12 +526,12 @@ int jaccard(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
     if (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
       Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
       cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
     } else {
@@ -551,13 +551,13 @@ int jaccard(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
     if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
       Jaccard_IsKernel<true, vertex_t, edge_t, weight_t> is_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
       cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
     } else {
@@ -573,9 +573,9 @@ int jaccard(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)e});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)e});
       Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(e, weight_i_acc, weight_s_acc, weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
   });
@@ -607,12 +607,12 @@ int jaccard_pairs(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> work_acc = work.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)n});
     cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write, cl::sycl::access::target::local> shfl_temp(sum_local.get(0) * sum_local.get(1), cgh);
     if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
       Jaccard_RowSumKernel<true, vertex_t, edge_t, weight_t> sum_kernel(n, csrPtr_acc, csrInd_acc, weight_in_acc, work_acc, shfl_temp);
       cgh.parallel_for(cl::sycl::nd_range<2>{sum_global, sum_local}, sum_kernel);
     } else {
@@ -633,15 +633,15 @@ int jaccard_pairs(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> const &csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &first_pair_acc = first_pair.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> const &second_pair_acc = second_pair.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> const &weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<edge_t, 1, cl::sycl::access::mode::read> csrPtr_acc = csrPtr.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n+1});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> csrInd_acc = csrInd.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> first_pair_acc = first_pair.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<vertex_t, 1, cl::sycl::access::mode::read> second_pair_acc = second_pair.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> work_acc = work.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)n});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read_write> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
     if constexpr (weighted) {
-      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+      cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_in_acc = weight_in->template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
       Jaccard_IsPairsKernel<true, vertex_t, edge_t, weight_t> is_kernel(num_pairs, csrPtr_acc, csrInd_acc, first_pair_acc, second_pair_acc, weight_in_acc, work_acc, weight_i_acc, weight_s_acc);
       cgh.parallel_for(cl::sycl::nd_range<3>{is_global, is_local}, is_kernel);
     } else {
@@ -657,9 +657,9 @@ int jaccard_pairs(vertex_t n,
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> const &weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
-    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> const &weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_i_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::read> weight_s_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
+    cl::sycl::accessor<weight_t, 1, cl::sycl::access::mode::discard_write> weight_j_acc = weight_j.template get_access<cl::sycl::access::mode::discard_write>(cgh, cl::sycl::range<1>{(size_t)num_pairs});
       Jaccard_JwKernel<weighted, vertex_t, edge_t, weight_t> jw_kernel(num_pairs, weight_i_acc, weight_s_acc, weight_j_acc);
       cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
   });
