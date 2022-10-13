@@ -23,7 +23,12 @@ else
 endif
 
 CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX --std=c++17 $(OPTS)
+LDFLAGS := $(LDFLAGS) --std=c++17
+ifneq ($(NO_LIBSTDFS),1)
+  SYCL_LD_FLAGS :=  $(SYCL_LD_FLAGS) -lstdc++fs
+endif
 SYCL_C_FLAGS := $(SYCL_C_FLAGS) $(CFLAGS)
+SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) $(LDFLAGS)
 ifeq ($(COMPILER), HIPSYCL)
   ifeq ($(HIPSYCL_PATH),)
     HIPSYCL_PATH=/opt/hipSYCL
@@ -53,9 +58,6 @@ ifeq ($(COMPILER), HIPSYCL)
   #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib --hipsycl-explicit-multipass
   SYCL_C_FLAGS := $(SYCL_C_FLAGS) -isystem $(HIPSYCL_PATH) --hipsycl-targets=$(HIPSYCL_TARGETS) $(ROCPROFILER_C_FLAGS) -D HIPSYCL
   SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) --hipsycl-targets=$(HIPSYCL_TARGETS) -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib $(OPTS) $(ROCPROFILER_LD_FLAGS) -fuse-ld=lld
-  ifneq ($(NO_LIBSTDFS),1)
-    SYCL_LD_FLAGS :=  $(SYCL_LD_FLAGS) -lstdc++fs
-  endif
 endif
 ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   ONEAPI_PATH=/opt/intel/oneapi/compiler/2021.2.0/linux
@@ -78,24 +80,27 @@ endif
 .PHONY: all
 all: jaccardSYCL compareCoords
 
-jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS) --std=c++17 -lstdc++fs
-
-main.o: main.cpp
-	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
-
-jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
-	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
-
-readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
-	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
-
 compareCoords: compareCoords.o readMtxToCSR.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
+
+jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
+	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(CFLAGS) -o compareCoords.o -c compareCoords.cpp
 
+filetypes.o: filetypes.cpp
+	g++ -o filetypes.o -c filetypes.cpp $(CFLAGS) $(OPTS)
+
+jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
+
+main.o: main.cpp
+	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
+
+readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
+	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
+
 .PHONY: clean
 clean:
-	rm jaccardSYCL *.o	
+	rm jaccardSYCL compareCoords *.o	
