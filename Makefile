@@ -14,11 +14,16 @@
 # * limitations under the License.
 # *
 
+ifeq ($(DEBUG), 1)
+  OPTS=-g -DDEBUG -O0
+else
+  OPTS=-O3
+endif
 HIPSYCL_PATH=`pwd`/../edge2-hipSYCL
 HIPSYCL_CLANG_PATH=`pwd`/../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall/
 SYCL=$(HIPSYCL_PATH)/bin/syclcc
 #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib -O3
+SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib -O3 $(OPTS)
 ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
 ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
 
@@ -26,22 +31,22 @@ ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
 all: jaccardSYCL compareCoords
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o -g $(ROCPROFILER_LIB)
+	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(ROCPROFILER_LIB)
 
 main.o: main.cpp
-	$(SYCL) $(SYCL_FLAGS) -o main.o -c main.cpp -g $(ROCPROFILER_INCL)
+	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
-	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -g -D STANDALONE -v
+	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
 
 readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
-	$(SYCL) $(SYCL_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp -g 
+	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
 
 compareCoords: compareCoords.o readMtxToCSR.o
-	$(SYCL) $(SYCL_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o -g
+	$(SYCL) $(SYCL_LD_FLAGS) -o compareCoords compareCoords.o readMtxToCSR.o
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
-	$(SYCL) $(SYCL_FLAGS) -o compareCoords.o -c compareCoords.cpp -g
+	$(SYCL) $(SYCL_C_FLAGS) -o compareCoords.o -c compareCoords.cpp
 
 .PHONY: clean
 clean:

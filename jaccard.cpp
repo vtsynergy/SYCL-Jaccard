@@ -540,7 +540,27 @@ int jaccard(vertex_t n,
   //FIXME: Add SYCL asynchronous error checking
   // CUDA actually had a sync here, force a queue flush
   q.wait();
+#ifdef DEBUG  
+  cl::sycl::queue debug = cl::sycl::queue(cl::sycl::cpu_selector());
+  std::cout << "DEBUG: Post-RowSum Work matrix of " << n << " elements" << std::endl;
+  debug.submit([&](cl::sycl::handler &cgh){
+    auto debug_acc = work.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+    for (int i = 0; i < n; i++) {
+  //    std::cout << debug_acc[i] << std::endl;
+    }
+  });
+#endif //DEBUG
   fill(e, weight_i, weight_t{0.0}, q);
+#ifdef DEBUG  
+  q.wait();
+  std::cout << "DEBUG: Post-Fill Weight_i matrix of " << e << " elements" << std::endl;
+  debug.submit([&](cl::sycl::handler &cgh){
+    auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+    for (int i = 0; i < e; i++) {
+    //  std::cout << debug_acc[i] << std::endl;
+    }
+  });
+#endif //DEBUG
 
   //Back to previous value since this doesn't require barriers
   y = 4;
@@ -568,6 +588,17 @@ int jaccard(vertex_t n,
     }
   });
   //FIXME: Add SYCL asynchronous error checking, no need to flush
+#ifdef DEBUG  
+  q.wait();
+  std::cout << "DEBUG: Post-IS Weight_i and Weight_s matrices of " << e << " elements" << std::endl;
+  debug.submit([&](cl::sycl::handler &cgh){
+    auto debug_acc = weight_i.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+    auto debug2_acc = weight_s.template get_access<cl::sycl::access::mode::read>(cl::sycl::range<1>(n));
+    for (int i = 0; i < e; i++) {
+    //  std::cout << debug_acc[i] << " " << debug2_acc[i] << std::endl;
+    }
+  });
+#endif //DEBUG
 
   // setup launch configuration
   cl::sycl::range<1> jw_local{(size_t)min(e, edge_t{CUDA_MAX_KERNEL_THREADS})};
@@ -582,7 +613,9 @@ int jaccard(vertex_t n,
       cgh.parallel_for(cl::sycl::nd_range<1>{jw_global, jw_local}, jw_kernel);
   });
   //FIXME: Add SYCL asynchronous error checking, no need to flush
-
+#ifdef DEBUG
+  q.wait();
+#endif //DEBUG
   return 0;
 }
 

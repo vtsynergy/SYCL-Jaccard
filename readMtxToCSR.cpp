@@ -124,7 +124,7 @@ template <typename WT>
 std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> &csr, bool isZeroIndexed) {
 std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WT>>();
   //TODO Is this legal to do?
-  cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
+  //cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
 
   //Submit a command group so we can use a host accessor
   cl::sycl::queue q = cl::sycl::queue(cl::sycl::cpu_selector());
