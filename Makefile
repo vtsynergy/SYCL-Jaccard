@@ -37,26 +37,23 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
   SYCL_C_FLAGS = -fsycl $(OPTS) -D SYCL_1_2_1 -D ICX
   SYCL_LD_FLAGS = -fsycl -L $(ONEAPI_PATH)/lib -L$(ONEAPI_PATH)/compiler/lib/intel64_lin -Wl,-rpath=$(ONEAPI_PATH)/lib,-rpath=$(ONEAPI_PATH)/compiler/lib/intel64_lin $(OPTS) -lstdc++
   ifeq ($(FPGA), INTEL)
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -fsycl-link=early
-  DEPS := $(DEPS) jaccard_fpga.hardware
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga -Xshardware -fsycl-link=image -reuse-exe=jaccardSYCL
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -Xshardware -fsycl-link=image -DDISABLE_DP
   endif
   ifeq ($(FPGA), INTEL_EMU)
-  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga
-  DEPS := $(DEPS) jaccard_fpga.hardware
+  SYCL_LD_FLAGS := $(SYCL_LD_FLAGS) -fintelfpga
+  SYCL_C_FLAGS := $(SYCL_C_FLAGS) -fintelfpga -DDISABLE_DP
   endif
 endif
 
 .PHONY: all
 all: jaccardSYCL compareCoords
 
-jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o $(DEPS)
-	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(DEPS)
+jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
+	$(SYCL) $(SYCL_LD_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o
 
 main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
-
-jaccard_fpga.hardware: jaccard.cpp standalone_csr.hpp
-	$(SYCL) $(SYCL_C_FLAGS) jaccard.cpp -o jaccard_fpga.hardware -D STANDALONE
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
