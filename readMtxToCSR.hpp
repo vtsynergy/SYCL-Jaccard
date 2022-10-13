@@ -33,7 +33,7 @@ GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> mtx, boo
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false);
 template <typename ET, typename VT, typename WT>
-void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted = false, bool isDirected = false, bool keepReverseEdges = true);
+void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted = false, bool isDirected = false);
 
 
 typedef struct {
@@ -52,6 +52,6 @@ typedef struct {
 } CSRFileHeader;
 
 template <typename ET, typename VT, typename WT>
-void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false, bool isWeighted = false, bool isDirected = false, bool keepReverseEdges = true);
+void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false, bool isWeighted = false, bool isDirected = false, bool hasReverseEdges = true);
 
 void * FileToCSR(std::ifstream &fileIn, CSRFileHeader * header);

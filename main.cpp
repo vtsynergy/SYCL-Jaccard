@@ -23,6 +23,8 @@
   #include <filesystem>
 #endif
 #include <iostream>
+#include <cstring>
+#include <vector>
 #include <CL/sycl.hpp>
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
 #include "standalone_algorithms.hpp"
@@ -76,30 +78,23 @@ int main(int argc, char * argv[]) {
   //TODO arg bounds safety
   std::ifstream fileIn;
   std::ofstream fileOut;
-  graphFileType inType, outType;
+  graphFileType inType, outType, working;
   setUpFiles(argv[1], argv[2], fileIn, fileOut, inType, outType); 
-  bool isWeighted, isDirected;
-  bool keepReverseEdges = false;
+  bool keepReverseEdges = true;
+  bool isWeighted = false, isDirected = false, hasReverseEdges = false, isZeroIndexed = false;
   GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph;
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph;
   if (inType == mtx) { // IF extension is mtx, use the string r/w
-    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted, &isDirected);
-    //Convert it to a CSR
-    //FIXME this should read directly to buffers with writeback pointers
-    graph = mtxSetToCSR(*mtx_graph);
-    //Add an environment variable to dump CSR for both input and output as a sideeffect of an MTX-file run
-    char * dump_csr = std::getenv("JACCARD_IN_CSR_DUMP_FILEPATH");
-    if (dump_csr != NULL) {
-      #ifdef DEBUG
-        std::cerr << "Requested CSR Dump of input file \"" << argv[1] << "\" to \"" << dump_csr << "\"" << std::endl;
-      #endif
-      std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
-      CSRToFile(csrDumpFile, (*graph), false, isWeighted);
-      csrDumpFile.close();
-    }
+    working = mtx;
+    mtx_graph = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted, &isDirected);
   } else if (inType == csr) { // IF extension is csr, use binary r/w
+    working = csr;
     CSRFileHeader header;
     graph = static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE>*>(FileToCSR(fileIn, &header));
     isWeighted = header.flags.isWeighted;
+    isDirected = header.flags.isDirected;
+    hasReverseEdges = header.flags.hasReverseEdges;
+    isZeroIndexed = header.flags.isZeroIndexed;
     if (header.flags.isVertexT64 || header.flags.isEdgeT64 || (header.flags.isWeighted && ((header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) || (!header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
       std::cerr << "Binary CSR Input Header does not match required data types" << std::endl;
       exit(3);
@@ -108,6 +103,41 @@ int main(int argc, char * argv[]) {
     std::cerr << "InputGraphType is" << inType << std::endl;
   }
   fileIn.close(); 
+  //MTX needs to have the reverse edges generated
+  if (!isDirected && !hasReverseEdges) {
+    if (working == csr) {
+      //Switch it to MTX to reverse them
+      mtx_graph = CSRToMtx(*graph, isZeroIndexed);
+      working = mtx;
+      delete graph; //Don't need to maintain it as a CSR, as a new one will be generated later
+    } else if ( working != mtx) {
+      //Future formats
+    }
+    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * reverse = invertDirection(*mtx_graph);
+    mtx_graph->insert(reverse->begin(), reverse->end());
+    hasReverseEdges = true;
+    delete reverse;
+  }
+  //Convert it to a CSR
+  if (working == mtx) {
+    graph = mtxSetToCSR(*mtx_graph);
+    working = csr;
+    delete mtx_graph;
+  } else if (working != csr) {
+    //Future formats
+  }
+
+  //Add an environment variable to dump CSR for both input and output as a sideeffect of an MTX-file run
+  char * dump_csr = std::getenv("JACCARD_IN_CSR_DUMP_FILEPATH");
+  if (dump_csr != nullptr) {
+    #ifdef DEBUG
+      std::cerr << "Requested CSR Dump of input file \"" << argv[1] << "\" to \"" << dump_csr << "\"" << std::endl;
+    #endif
+    std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+    CSRToFile(csrDumpFile, (*graph), false, isWeighted);
+    csrDumpFile.close();
+    dump_csr = nullptr; //Reset it incase there is no output dump
+  }
   //We can't override weighting until here, or else the MTX will get confused about tokens per line if the file and override disagree on the presence of weight values.
   //Undef=defer to file, 1=Weighted, 0=Unweighted
   char * weighted_override = std::getenv("JACCARD_FORCE_WEIGHTED");
@@ -232,23 +262,62 @@ int main(int argc, char * argv[]) {
     });
     #endif
 
-    if (outType == mtx) { // IF extension is mtx, use the string r/w
-      //Add an environment variable to dump CSR for output as a sideeffect of an MTX-file run
-      char * dump_csr = std::getenv("JACCARD_OUT_CSR_DUMP_FILEPATH");
-      if (dump_csr != NULL) {
-        #ifdef DEBUG
-          std::cerr << "Requested CSR Dump of output file \"" << argv[2] << "\" to \"" << dump_csr << "\"" << std::endl;
-        #endif
-        std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
-        CSRToFile(csrDumpFile, gpu_graph_results, false, isWeighted);
-        csrDumpFile.close();
+    //Don't need the inputs anymore
+    if (isWeighted) {
+      delete graph->edge_data;
+    }
+    delete graph;
+    graph = nullptr;
+    //Only remove edges if the formats disagree
+    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = nullptr;
+    if (hasReverseEdges && (!keepReverseEdges || (outType == mtx && !isDirected))) {
+      gpu_results_mtx = CSRToMtx(gpu_graph_results, true);
+      removeReverseEdges(*gpu_results_mtx);
+      hasReverseEdges = false;
+      working = mtx;
+    }
+    //Add an environment variable to dump CSR for output as a sideeffect of an MTX-file run
+    dump_csr = std::getenv("JACCARD_OUT_CSR_DUMP_FILEPATH");
+    if (dump_csr != nullptr) {
+      if (working == mtx) {
+        //The only reason it would be MTX at this point is if we had to delete reverse edges
+        graph = mtxSetToCSR(*gpu_results_mtx, true, false);
+        gpu_graph_results = *graph;
+        delete graph; //Just holds pointers, don't need them anymore
+        working = csr;
       }
+      #ifdef DEBUG
+        std::cerr << "Requested CSR Dump of output file \"" << argv[2] << "\" to \"" << dump_csr << "\"" << std::endl;
+      #endif
+      std::ofstream csrDumpFile(dump_csr, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
+      CSRToFile(csrDumpFile, gpu_graph_results, isZeroIndexed, isWeighted, isDirected, keepReverseEdges);
+      csrDumpFile.close();
+    }
+    if (outType == mtx) { // IF extension is mtx, use the string r/w
       //convert back to MTX (implicit copyback if not done explicitly)
-      std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = CSRToMtx<int32_t, int32_t, WEIGHT_TYPE>(gpu_graph_results, true);
-      mtxSetToFile(fileOut, *gpu_results_mtx, gpu_graph_results.number_of_vertices, gpu_graph_results.number_of_edges, isWeighted, isDirected, keepReverseEdges);
+      if (working == csr && gpu_results_mtx == nullptr) { //We have not had to generate the MTX yet (there were no reverse edges)
+        gpu_results_mtx = CSRToMtx<int32_t, int32_t, WEIGHT_TYPE>(gpu_graph_results, isZeroIndexed);
+      }
+      mtxSetToFile(fileOut, *gpu_results_mtx, gpu_graph_results.number_of_vertices, gpu_graph_results.number_of_edges, isWeighted, isDirected);
     } else if (outType == csr) { // IF extension is csr, use binary r/w
-      CSRToFile(fileOut, gpu_graph_results, false, isWeighted, keepReverseEdges);
+      if (working == mtx) { //We had to delete some reverse edges and haven't flipped back to CSR yet
+        graph = mtxSetToCSR(*gpu_results_mtx);
+        gpu_graph_results = *graph;
+        delete graph; //Just holds pointers, don't need them anymore
+        working = csr;
+      }
+      CSRToFile(fileOut, gpu_graph_results, isZeroIndexed, isWeighted, isDirected, hasReverseEdges);
     } //No else, but extensible if we need different outputs eventually
     fileOut.close();
+    //Cleanup outputs. CSR is canonical form, so only delete pointers from there
+    if (gpu_results_mtx != nullptr) {
+      delete gpu_results_mtx;
+      gpu_results_mtx = nullptr;
+    }
+    delete gpu_graph_results.offsets;
+    delete gpu_graph_results.indices;
+    if (gpu_graph_results.edge_data != nullptr) {
+      delete gpu_graph_results.edge_data;
+    }
   } //End Results buffer scope
 }

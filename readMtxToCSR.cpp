@@ -90,11 +90,6 @@ std::set<std::tuple<ET, VT, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * has
   } while (!fileIn.eof());
   ret_edges->insert(tmp_vec->begin(), tmp_vec->end());
   delete tmp_vec;
-  if (!(*isDirected)) {
-    std::set<std::tuple<ET, VT, WT>> * reverse = invertDirection(*ret_edges);
-    ret_edges->insert(reverse->begin(), reverse->end());
-    delete reverse;
-  }
   return ret_edges;
 }
 template <typename ET, typename VT, typename WT>
@@ -201,7 +196,7 @@ std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, V
   return ret_set;
 }
 template <typename ET, typename VT, typename WT>
-void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected, bool keepReverseEdges) {
+void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected) {
     //Add the description comment
     fileOut << "\%\%MatrixMarket matrix coordinate ";
     if (isWeighted) {
@@ -213,17 +208,13 @@ void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx,
     } else {
       fileOut << "pattern ";
     }
-    if (isDirected || keepReverseEdges) {
+    if (isDirected) {
       fileOut << "general" << std::endl;
     } else {
       fileOut << "symmetric" << std::endl;
     }
     //Start constructing the vert/edge header line
     fileOut << numVerts << " " << numVerts << " ";
-    //Remove reverse edges if necessary and iAdd the vert/edge header line
-    if (!isDirected && !keepReverseEdges) {
-      removeReverseEdges(mtx);
-    }
     fileOut << mtx.size() << std::endl;
     for (std::tuple<VT, ET, WEIGHT_TYPE> edge : mtx) {
       //std::cout << "Source, Destination, JS-Score: " << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
@@ -232,54 +223,30 @@ void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx,
 }
 
 template <typename ET, typename VT, typename WT>
-void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool keepReverseEdges) {
-  int64_t indexLeng, offsetLeng;
-  VT * indices;
-  ET * offsets;
-  WT * weights;
+void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool hasReverseEdges) {
   CSRFileHeader header = {CSR_BINARY_FORMAT_VERSION,
                           int64_t{csr.number_of_vertices},
                           int64_t{csr.number_of_edges},
                             {isWeighted,
                              isZeroIndexed,
                              isDirected,
-                             keepReverseEdges,
+                             hasReverseEdges,
                              std::is_same<VT, int64_t>::value,
                              std::is_same<ET, int64_t>::value,
                              std::is_same<WT, int64_t>::value
                             }
                           };
   std::set<std::tuple<ET, VT, WT>> * mtx = nullptr;
-  GraphCSRView<VT, ET, WT> * halfGraph = nullptr;
-  if (!keepReverseEdges){
-    //FIXME: Add a step to convert the CSR to MTX and to remove duplicates if !isDirected
-    mtx = CSRToMtx(csr);
-    removeReverseEdges(*mtx);
-    halfGraph = mtxSetToCSR(*mtx);
-    offsets = halfGraph->offsets;
-    offsetLeng = halfGraph->number_of_vertices+1;
-    indices = halfGraph->indices;
-    indexLeng = halfGraph->number_of_edges;
-    weights = halfGraph->edge_data;
-  } else {
-    offsets = csr.offsets;
-    offsetLeng = csr.number_of_vertices+1;
-    indices = csr.indices;
-    indexLeng = csr.number_of_edges;
-    weights = csr.edge_data;
-  }
   //Write header
   fileOut.write(reinterpret_cast<char*>(&header), sizeof(CSRFileHeader));
   //Write Vertex Offsets
-  fileOut.write(reinterpret_cast<char*>(offsets), sizeof(ET)*offsetLeng);
+  fileOut.write(reinterpret_cast<char*>(csr.offsets), sizeof(ET)*(1+csr.number_of_vertices));
   //Write Neighbor edges
-  fileOut.write(reinterpret_cast<char*>(indices), sizeof(VT)*indexLeng);
+  fileOut.write(reinterpret_cast<char*>(csr.indices), sizeof(VT)*csr.number_of_edges);
   //Write Weights (If any)
   if (isWeighted) {
-    fileOut.write(reinterpret_cast<char*>(weights), sizeof(WT)*indexLeng);
+    fileOut.write(reinterpret_cast<char*>(csr.edge_data), sizeof(WT)*csr.number_of_edges);
   }
-  if (mtx != nullptr) delete mtx;
-  if (halfGraph != nullptr) delete mtx;
 }
 
 template<typename ET, typename VT, typename WT>
@@ -298,16 +265,6 @@ inline GraphCSRView<VT, ET, WT> * CSRFileReader(std::ifstream &fileIn, CSRFileHe
     weightsPtr = weights->data();
   }
   GraphCSRView<VT, ET, WT> * retGraph = new GraphCSRView<VT, ET, WT>(offsets->data(), indices->data(), weightsPtr, header.numVerts, header.numEdges);
-  if (!header.flags.isDirected && !header.flags.hasReverseEdges) {
-    //Undirected and need to add reverse edges
-    std::set<std::tuple<ET, VT, WT>> * mtx = CSRToMtx(*retGraph, header.flags.isZeroIndexed);
-    delete retGraph;
-    std::set<std::tuple<ET, VT, WT>> * reverse = invertDirection(*mtx);
-    mtx->insert(reverse->begin(), reverse->end());
-    delete reverse;
-    retGraph = mtxSetToCSR(*mtx, header.flags.isZeroIndexed);
-    delete mtx;
-  }
   //Construct and return the Graph
   return retGraph; 
 }
@@ -342,5 +299,7 @@ template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &file
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected);
 template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> mtx, bool ignoreSelf, bool isZeroIndexed);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *CSRToMtx(GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed);
-template void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected, bool keepReverseEdges);
+template void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected);
 template void CSRToFile<int32_t, int32_t, WEIGHT_TYPE>(std::ofstream &fileOut, GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool keepReverseEdges);
+template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* invertDirection(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> & mtx);
+template void removeReverseEdges(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx);
