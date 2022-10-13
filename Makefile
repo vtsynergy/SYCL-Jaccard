@@ -22,7 +22,7 @@ else
   OPTS=-O3
 endif
 
-CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX $(OPTS)
+CFLAGS := $(CFLAGS) -DDISABLE_DP_WEIGHT -DDISABLE_LIST -DDISABLE_DP_INDEX --std=c++17 $(OPTS)
 SYCL_C_FLAGS := $(SYCL_C_FLAGS) $(CFLAGS)
 ifeq ($(COMPILER), HIPSYCL)
   ifeq ($(HIPSYCL_PATH),)
@@ -82,7 +82,7 @@ jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
 	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS) --std=c++17 -lstdc++fs
 
 main.o: main.cpp
-	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp --std=c++17
+	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -D STANDALONE
