@@ -24,8 +24,8 @@ template <typename ET, typename VT, typename WT>
 std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
-                                               bool *isDirected, int64_t *numVerts = nullptr,
-                                               int64_t *numEdges = nullptr, bool dropWeights = true);
+                                               bool *isDirected, VT *numVerts = nullptr,
+                                               ET *numEdges = nullptr, bool dropWeights = true);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *invertDirection(std::set<std::tuple<ET, VT, WT>> &mtx);
 template <typename ET, typename VT, typename WT>
@@ -45,10 +45,10 @@ typedef struct {
   int64_t numVerts;
   int64_t numEdges;
   struct alignas(alignof(int64_t)) {
-    bool isWeighted : 1;    // Whether an edge-weight vector is present
-    bool isZeroIndexed : 1; // Whether the vertex indices start at 0 (true) or false (1)
-    bool isDirected : 1;    // Whether the graph was original read as general (true) or symmetric
-                         // (false)
+    bool isWeighted : 1;      // Whether an edge-weight vector is present
+    bool isZeroIndexed : 1;   // Whether the vertex indices start at 0 (true) or false (1)
+    bool isDirected : 1;      // Whether the graph was original read as general (true) or symmetric
+                              // (false)
     bool hasReverseEdges : 1; // Only used if !isDirected to indicate whether the file contains just
                               // one direction for each bidirectional edge (and thus needs reverse
                               // edges to be generated) or whether the reverse edges are already

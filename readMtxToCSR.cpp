@@ -47,8 +47,8 @@ std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
 // This assumes we've already read the header
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>> *fileToMTXSet(std::ifstream &fileIn, bool *hasWeights,
-                                               bool *isDirected, int64_t *numVerts,
-                                               int64_t *numEdges, bool dropWeights) {
+                                               bool *isDirected, VT *numVerts,
+                                               ET *numEdges, bool dropWeights) {
   std::set<std::tuple<ET, VT, WT>> *ret_edges = new std::set<std::tuple<ET, VT, WT>>();
   std::vector<std::tuple<ET, VT, WT>> *tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   // TODO This should really do all the header parsing here, rather than relying on the caller to do
@@ -146,8 +146,8 @@ void removeReverseEdges(std::set<std::tuple<ET, VT, WT>> &mtx) {
 }
 
 // FIXME This may break down with directed graphs, specifically if a vertex only has inbound, but
-// not outbound graphs, it won't get an entry in row_bounds (which should have start == end) for such
-// a case)
+// not outbound graphs, it won't get an entry in row_bounds (which should have start == end) for
+// such a case)
 template <typename ET, typename VT, typename WT>
 GraphCSRView<VT, ET, WT> *mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> &mtx, bool ignoreSelf,
                                       bool isZeroIndexed) {
@@ -397,6 +397,9 @@ void *FileToCSR(std::ifstream &fileIn, CSRFileHeader *header) {
 template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &fileIn,
                                                              bool isWeighted);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *
+fileToMTXSet(std::ifstream &fileIn, bool *hasWeights, bool *isDirected, int32_t *numVerts,
+             int32_t *numEdges, bool dropWeights);
+template std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>> *
 fileToMTXSet(std::ifstream &fileIn, bool *hasWeights, bool *isDirected, int64_t *numVerts,
              int64_t *numEdges, bool dropWeights);
 template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *
