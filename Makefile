@@ -14,21 +14,22 @@
 # * limitations under the License.
 # *
 
-HIPSYCL_PATH=../edge2-hipSYCL
-HIPSYCL_CLANG_PATH=../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall/
+HIPSYCL_PATH=`pwd`/../edge2-hipSYCL
+HIPSYCL_CLANG_PATH=`pwd`/../../coreTSARWorkspace/SYCL-implementations/dependencies/llvm-github-srcInstall/
 SYCL=$(HIPSYCL_PATH)/bin/syclcc
 #SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib
-SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="hip:gfx900" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib -O3
-
+SYCL_FLAGS=-isystem $(HIPSYCL_PATH) --hipsycl-targets="omp;hip:gfx900,gfx803" -Wl,-rpath=$(HIPSYCL_PATH)/lib,-rpath=$(HIPSYCL_CLANG_PATH)/lib -O3
+ROCPROFILER_INCL= -I /opt/rocm/include -I /opt/rocm/include/hsa
+ROCPROFILER_LIB= -L /opt/rocm/lib -lrocprofiler64
 
 .PHONY: all
 all: jaccardSYCL compareCoords
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o
-	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o -g
+	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o -g $(ROCPROFILER_LIB)
 
 main.o: main.cpp
-	$(SYCL) $(SYCL_FLAGS) -o main.o -c main.cpp -g
+	$(SYCL) $(SYCL_FLAGS) -o main.o -c main.cpp -g $(ROCPROFILER_INCL)
 
 jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 	$(SYCL) $(SYCL_FLAGS) -o jaccardSYCL.o -c jaccard.cpp -g -D STANDALONE -v

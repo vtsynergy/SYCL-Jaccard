@@ -19,7 +19,7 @@
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"
-
+#include </opt/rocm/rocprofiler/include/rocprofiler.h>
 
 #ifndef WT
 #define WT double
