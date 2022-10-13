@@ -18,11 +18,16 @@
 #include <set>
 #include <tuple>
 #include "standalone_csr.hpp"
+#define CSR_BINARY_FORMAT_VERSION 1
 
 template <typename ET, typename VT, typename WT>
 std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted = true);
 template <typename ET, typename VT, typename WT>
 std::set<std::tuple<ET, VT, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected);
+template <typename ET, typename VT, typename WT>
+std::set<std::tuple<ET, VT, WT>>* invertDirection(std::set<std::tuple<ET, VT, WT>> & mtx);
+template <typename ET, typename VT, typename WT>
+void removeReverseEdges(std::set<std::tuple<ET, VT, WT>> &mtx);
 template <typename ET, typename VT, typename WT>
 GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
 template <typename ET, typename VT, typename WT>
@@ -30,18 +35,21 @@ std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool 
 
 
 typedef struct {
+  int64_t binaryFormatVersion = CSR_BINARY_FORMAT_VERSION;
   int64_t numVerts;
   int64_t numEdges;
   struct alignas(alignof(int64_t)) {
-    bool isWeighted : 1;
-    bool isZeroIndexed : 1;
-    bool isVertexT64 : 1;
-    bool isEdgeT64 : 1;
-    bool isWeightT64 : 1;
+    bool isWeighted : 1; //Whether an edge-weight vector is present
+    bool isZeroIndexed : 1; //Whether the vertex indices start at 0 (true) or false (1)
+    bool isDirected : 1; //Whether the graph was original read as general (true) or symmetric (false)
+    bool hasReverseEdges : 1; //Only used if !isDirected to indicate whether the file contains just one direction for each bidirectional edge (and thus needs reverse edges to be generated) or whether the reverse edges are already included
+    bool isVertexT64 : 1; //Whether the vertex type is int64_t (8 bytes wide) or int32_t (4 bytes wide
+    bool isEdgeT64 : 1; //Whether the edge type is int64_t (8 bytes wide) or int32_t (4 bytes)
+    bool isWeightT64 : 1; //whether the weight type is double (8 bytes wide) or float (4 bytes wide)
   } flags;
 } CSRFileHeader;
 
 template <typename ET, typename VT, typename WT>
-void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false, bool isWeighted = false);
+void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed = false, bool isWeighted = false, bool isDirected = false, bool keepReverseEdges = true);
 
 void * FileToCSR(std::ifstream &fileIn, CSRFileHeader * header);

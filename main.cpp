@@ -78,10 +78,11 @@ int main(int argc, char * argv[]) {
   std::ofstream fileOut;
   graphFileType inType, outType;
   setUpFiles(argv[1], argv[2], fileIn, fileOut, inType, outType); 
-  bool isWeighted;
+  bool isWeighted, isDirected;
+  bool keepReverseEdges = false;
   GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph;
   if (inType == mtx) { // IF extension is mtx, use the string r/w
-    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted);
+    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted, &isDirected);
     //Convert it to a CSR
     //FIXME this should read directly to buffers with writeback pointers
     graph = mtxSetToCSR(*mtx_graph);
@@ -250,7 +251,7 @@ int main(int argc, char * argv[]) {
         fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
       }
     } else if (outType == csr) { // IF extension is csr, use binary r/w
-      CSRToFile(fileOut, gpu_graph_results, false, isWeighted);
+      CSRToFile(fileOut, gpu_graph_results, false, isWeighted, keepReverseEdges);
     } //No else, but extensible if we need different outputs eventually
     fileOut.close();
   } //End Results buffer scope
