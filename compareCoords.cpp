@@ -45,11 +45,19 @@ int main(int argc, char *argv[]) {
   double tol = atof(argv[3]);
   size_t warnCount = 0;
 
-  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *goldSet = readCoordFile(gold);
-  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *testSet = readCoordFile(test);
+  bool hasWeights = true, isDirected = false;
+  int64_t numVerts = 0, numEdges = 0, count = 0;
+  std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>> *goldSet =
+      fileToMTXSet<int64_t, int64_t, WEIGHT_TYPE>(gold, &hasWeights, &isDirected, &numVerts,
+                                                  &numEdges);
+  int64_t onePct = numEdges / 100;
+  std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>> *testSet =
+      fileToMTXSet<int64_t, int64_t, WEIGHT_TYPE>(test, &hasWeights, &isDirected, &numVerts,
+                                                  &numEdges);
   gold.close();
   test.close();
 
+  std::cout << "Inputs successfully read, proceeding to test" << std::endl;
   // If the size of sets is different, they won't necessarily align, but they're sorted so we can
   // try to make due
   if (goldSet->size() != testSet->size()) {
@@ -58,8 +66,8 @@ int main(int argc, char *argv[]) {
   }
 
   // Create our two iterators (rather than a loop, so we can advance the lessor on mismatch
-  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>::iterator goldItr = goldSet->begin();
-  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>::iterator testItr = testSet->begin();
+  std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>>::iterator goldItr = goldSet->begin();
+  std::set<std::tuple<int64_t, int64_t, WEIGHT_TYPE>>::iterator testItr = testSet->begin();
   while (goldItr != goldSet->end() && testItr != testSet->end()) {
     // If the coordinates match, then test for equality
     if ((std::get<0>(*goldItr) == std::get<0>(*testItr)) &&
@@ -87,6 +95,10 @@ int main(int argc, char *argv[]) {
         ++testItr;
       }
     }
+    count++;
+
+    if ((count % onePct) == 0)
+      std::cout << "Completed " << count / onePct << "\% of scan" << std::endl;
   }
   // If we ran out of one set before the other
   if (goldItr != goldSet->end()) {
