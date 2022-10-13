@@ -97,22 +97,24 @@ void readInputFiles(char *goldFile, char *testFile, graphFileType &type,
   type = goldType;
   // Read files and convert if necessary
   if (goldType == csr) {
-    CSRFileHeader header;
-    *goldCSR = static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(gold, &header));
-    if (header.flags.isVertexT64 || header.flags.isEdgeT64 ||
-        (header.flags.isWeighted &&
-         ((header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
-          (!header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
+    CSRFileHeader goldHeader;
+    *goldCSR =
+        static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(gold, &goldHeader));
+    if (goldHeader.flags.isVertexT64 || goldHeader.flags.isEdgeT64 ||
+        (goldHeader.flags.isWeighted &&
+         ((goldHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
+          (!goldHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
       std::cerr << "Binary CSR Gold Input Header does not match required weight type" << std::endl;
       exit(3);
     }
     if (testType == csr) {
+      CSRFileHeader testHeader;
       *testCSR =
-          static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(test, &header));
-      if (header.flags.isVertexT64 || header.flags.isEdgeT64 ||
-          (header.flags.isWeighted &&
-           ((header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
-            (!header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
+          static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(test, &testHeader));
+      if (testHeader.flags.isVertexT64 || testHeader.flags.isEdgeT64 ||
+          (testHeader.flags.isWeighted &&
+           ((testHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
+            (!testHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
         std::cerr << "Binary CSR Test Input Header does not match required weight type"
                   << std::endl;
         exit(3);
@@ -136,18 +138,18 @@ void readInputFiles(char *goldFile, char *testFile, graphFileType &type,
     *goldSet = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(gold, &hasWeights, &isDirected,
                                                            &numVerts, &numEdges, false);
     if (testType == csr) {
-      CSRFileHeader header;
+      CSRFileHeader testHeader;
       *testCSR =
-          static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(test, &header));
-      if (header.flags.isVertexT64 || header.flags.isEdgeT64 ||
-          (header.flags.isWeighted &&
-           ((header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
-            (!header.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
+          static_cast<GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *>(FileToCSR(test, &testHeader));
+      if (testHeader.flags.isVertexT64 || testHeader.flags.isEdgeT64 ||
+          (testHeader.flags.isWeighted &&
+           ((testHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, double>::value) ||
+            (!testHeader.flags.isWeightT64 && !std::is_same<WEIGHT_TYPE, float>::value)))) {
         std::cerr << "Binary CSR Gold Input Header does not match required weight type"
                   << std::endl;
         exit(3);
       }
-      *testSet = CSRToMtx(**testCSR, header.flags.isZeroIndexed, true);
+      *testSet = CSRToMtx(**testCSR, testHeader.flags.isZeroIndexed, true);
       delete (*testCSR)->offsets;
       delete (*testCSR)->indices;
       delete (*testCSR)->edge_data;
@@ -232,8 +234,8 @@ int main(int argc, char *argv[]) {
           ++testDest;
         }
       }
-      if (goldDest == goldCSR->offsets[goldSrc + 1]) ++goldSrc;
-      if (testDest == testCSR->offsets[testSrc + 1]) ++testSrc;
+      while (goldDest == goldCSR->offsets[goldSrc + 1]) ++goldSrc;
+      while (testDest == testCSR->offsets[testSrc + 1]) ++testSrc;
       count++;
 
       if ((count % onePct) == 0)
