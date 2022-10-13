@@ -41,7 +41,7 @@ namespace sygraph {
  * caller
  */
 template <typename VT, typename ET, typename WT>
-void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result);
+void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result, cl::sycl::queue &q);
 
 /**
  * @brief     Compute unweighted jaccard similarity coefficient for all vertices
@@ -59,7 +59,7 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl:
  * caller
  */
 template <typename VT, typename ET, typename WT>
-void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result);
+void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::sycl::queue &q);
 
 /**
  * @brief     Compute jaccard similarity coefficient for selected vertex pairs
@@ -85,7 +85,8 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                   ET num_pairs,
                   cl::sycl::buffer<VT> &first,
                   cl::sycl::buffer<VT> &second,
-                  cl::sycl::buffer<WT> &result);
+                  cl::sycl::buffer<WT> &result,
+                  cl::sycl::queue &q);
 
 /**
  * @brief     Compute unweighted jaccard similarity coefficient for selected vertex pairs
@@ -109,7 +110,8 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                   ET num_pairs,
                   cl::sycl::buffer<VT> &first,
                   cl::sycl::buffer<VT> &second,
-                  cl::sycl::buffer<WT> &result);
+                  cl::sycl::buffer<WT> &result,
+                  cl::sycl::queue &q);
 
 } // sygraph
 

@@ -35,6 +35,25 @@ int main(int argc, char * argv[]) {
   std::set<std::tuple<int32_t, int32_t, WT>>* mtx_graph = readMtx<WT>(fileIn, &isWeighted);
   fileIn.close();
 
+  //Go ahead and iterate over the SYCL devices and pick one if they've specified a device number
+  cl::sycl::queue q;
+  std::vector<cl::sycl::device> all_devices;
+  if (argc >= 3) {
+    int count = 0;
+    std::vector<cl::sycl::platform> plats = cl::sycl::platform::get_platforms();
+    for (cl::sycl::platform plat : plats) {
+      std::vector<cl::sycl::device> devs = plat.get_devices();
+      for (cl::sycl::device dev : devs) {
+        all_devices.push_back(dev);
+        std::cerr << "SYCL Device [" << count << "]: " << dev.get_info<cl::sycl::info::device::name>() << std::endl;
+        if (count == atoi(argv[2])) {
+          q = cl::sycl::queue(dev);
+        }
+        ++count;
+      }
+    }
+  }
+
   //Convert it to a CSR
   //FIXME this should read directly to buffers with writeback pointers
   GraphCSRView<int32_t, int32_t, WT> * graph = mtxSetToCSR(*mtx_graph);
@@ -50,7 +69,7 @@ int main(int argc, char * argv[]) {
   std::set<std::tuple<int32_t, int32_t, WT>> * gpu_results_mtx;
   { //Results buffer scope, for implicit copyback
     cl::sycl::buffer<WT> results_buf(gpu_results, (graph->number_of_edges));
-    sygraph::jaccard<int32_t, int32_t, double>(*graph, graph->edge_data, results_buf);
+    sygraph::jaccard<int32_t, int32_t, double>(*graph, graph->edge_data, results_buf, q);
   
     //Create a new results graph view, using the a copy constructor to re-reference the results buffer
     GraphCSRView<int32_t, int32_t, WT> gpu_graph_results(graph->offsets, graph->indices, results_buf, graph->number_of_vertices, graph->number_of_edges);

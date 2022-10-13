@@ -144,10 +144,8 @@ public:
 };
 
 template <typename T>
-void fill(size_t n, cl::sycl::buffer<T> &x, T value)
+void fill(size_t n, cl::sycl::buffer<T> &x, T value, cl::sycl::queue &q)
 {
-  //FIXME: Do we want a GPU queue, a custom selector, a default queue??
-  cl::sycl::queue q = cl::sycl::queue();
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
   size_t block = min(n, (size_t)CUDA_MAX_KERNEL_THREADS);
   size_t grid = min((n/block)+((n%block)?1:0), (size_t)CUDA_MAX_BLOCKS); 
@@ -513,10 +511,8 @@ int jaccard(vertex_t n,
             cl::sycl::buffer<weight_t> &work,
             cl::sycl::buffer<weight_t> &weight_i,
             cl::sycl::buffer<weight_t> &weight_s,
-            cl::sycl::buffer<weight_t> &weight_j)
+            cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
-  //FIXME: Do we want a GPU queue, a custom selector, a default queue??
-  cl::sycl::queue q = cl::sycl::queue();
   dim3 nthreads, nblocks;
   size_t y = 4;
 
@@ -542,7 +538,7 @@ int jaccard(vertex_t n,
   //FIXME: Add SYCL asynchronous error checking
   // CUDA actually had a sync here, force a queue flush
   q.wait();
-  fill(e, weight_i, weight_t{0.0});
+  fill(e, weight_i, weight_t{0.0}, q);
 
   // setup launch configuration
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
@@ -595,9 +591,8 @@ int jaccard_pairs(vertex_t n,
                   cl::sycl::buffer<weight_t> &work,
                   cl::sycl::buffer<weight_t> &weight_i,
                   cl::sycl::buffer<weight_t> &weight_s,
-                  cl::sycl::buffer<weight_t> &weight_j)
+                  cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
-  cl::sycl::queue q = cl::sycl::queue();
   dim3 nthreads, nblocks;
   size_t y = 4;
 
@@ -624,7 +619,7 @@ int jaccard_pairs(vertex_t n,
   q.wait();
 
   // NOTE: initilized weight_i vector with 0.0
-  // fill(num_pairs, weight_i, weight_t{0.0});
+  // fill(num_pairs, weight_i, weight_t{0.0}, q);
 
   // setup launch configuration
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
@@ -670,7 +665,7 @@ int jaccard_pairs(vertex_t n,
 }  // namespace detail
 
 template <typename VT, typename ET, typename WT>
-void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result)
+void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
 
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
@@ -685,12 +680,13 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &weights, cl:
                                                work,
                                                weight_i,
                                                weight_s,
-                                               result);
+                                               result,
+                                                      q);
   //Buffers autodestruct at end of function scope
 }
 
 template <typename VT, typename ET, typename WT>
-void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result)
+void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
 
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
@@ -704,7 +700,8 @@ void jaccard(GraphCSRView<VT, ET, WT> &graph, cl::sycl::buffer<WT> &result)
                                                 work,
                                                 weight_i,
                                                 weight_s,
-                                                result);
+                                                result,
+                                                      q);
   //Buffers autodestruct at end of function scope
 }
 
@@ -714,7 +711,7 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                   ET num_pairs,
                   cl::sycl::buffer<VT> &first,
                   cl::sycl::buffer<VT> &second,
-                  cl::sycl::buffer<WT> &result)
+                  cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> weight_s(cl::sycl::range<1>(graph.number_of_edges));
@@ -730,7 +727,8 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                                                      work,
                                                      weight_i,
                                                      weight_s,
-                                                     result);
+                                                     result,
+                                                      q);
   //Buffers autodestruct at end of function scope
 }
 
@@ -739,7 +737,7 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                   ET num_pairs,
                   cl::sycl::buffer<VT> &first,
                   cl::sycl::buffer<VT> &second,
-                  cl::sycl::buffer<WT> &result)
+                  cl::sycl::buffer<WT> &result, cl::sycl::queue &q)
 {
   cl::sycl::buffer<WT> weight_i(cl::sycl::range<1>(graph.number_of_edges));
   cl::sycl::buffer<WT> weight_s(cl::sycl::range<1>(graph.number_of_edges));
@@ -755,73 +753,82 @@ void jaccard_list(GraphCSRView<VT, ET, WT> &graph,
                                                       work,
                                                       weight_i,
                                                       weight_s,
-                                                      result);
+                                                      result,
+                                                      q);
   //Buffers autodestruct at end of function scope
 }
 
 template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                cl::sycl::buffer<float> &,
-                                               cl::sycl::buffer<float> &);
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
 template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                 cl::sycl::buffer<double> &,
-                                                cl::sycl::buffer<double> &);
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
 template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                cl::sycl::buffer<float> &,
-                                               cl::sycl::buffer<float> &);
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
 template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                 cl::sycl::buffer<double> &,
-                                                cl::sycl::buffer<double> &);
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
 template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
-                                               cl::sycl::buffer<float> &);
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
 template void jaccard<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
-                                                cl::sycl::buffer<double> &);
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
 template void jaccard<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
-                                               cl::sycl::buffer<float> &);
+                                               cl::sycl::buffer<float> &, cl::sycl::queue &q);
 template void jaccard<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
-                                                cl::sycl::buffer<double> &);
+                                                cl::sycl::buffer<double> &, cl::sycl::queue &q);
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     cl::sycl::buffer<float> &,
                                                     int32_t,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<int32_t> &,
-                                                    cl::sycl::buffer<float> &);
+                                                    cl::sycl::buffer<float> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      cl::sycl::buffer<double> &,
                                                      int32_t,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<int32_t> &,
-                                                     cl::sycl::buffer<double> &);
+                                                     cl::sycl::buffer<double> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     cl::sycl::buffer<float> &,
                                                     int64_t,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<int64_t> &,
-                                                    cl::sycl::buffer<float> &);
+                                                    cl::sycl::buffer<float> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      cl::sycl::buffer<double> &,
                                                      int64_t,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<int64_t> &,
-                                                     cl::sycl::buffer<double> &);
+                                                     cl::sycl::buffer<double> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> &,
                                                     int32_t,
                                                     cl::sycl::buffer<int32_t> &,
                                                     cl::sycl::buffer<int32_t> &,
-                                                    cl::sycl::buffer<float> &);
+                                                    cl::sycl::buffer<float> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int32_t, int32_t, double>(GraphCSRView<int32_t, int32_t, double> &,
                                                      int32_t,
                                                      cl::sycl::buffer<int32_t> &,
                                                      cl::sycl::buffer<int32_t> &,
-                                                     cl::sycl::buffer<double> &);
+                                                     cl::sycl::buffer<double> &,
+                                                     cl::sycl::queue &q);
 template void jaccard_list<int64_t, int64_t, float>(GraphCSRView<int64_t, int64_t, float> &,
                                                     int64_t,
                                                     cl::sycl::buffer<int64_t> &,
                                                     cl::sycl::buffer<int64_t> &,
-                                                    cl::sycl::buffer<float> &);
+                                                    cl::sycl::buffer<float> &,
+                                                    cl::sycl::queue &q);
 template void jaccard_list<int64_t, int64_t, double>(GraphCSRView<int64_t, int64_t, double> &,
                                                      int64_t,
                                                      cl::sycl::buffer<int64_t> &,
                                                      cl::sycl::buffer<int64_t> &,
-                                                     cl::sycl::buffer<double> &);
+                                                     cl::sycl::buffer<double> &,
+                                                     cl::sycl::queue &q);
 
 }  // namespace sygraph
