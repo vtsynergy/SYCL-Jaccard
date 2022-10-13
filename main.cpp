@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-#if __GNUC__ == 7
-  #include <experimental/filesystem>
-  namespace std {
-    namespace filesystem = experimental::filesystem;
-  }
-#else
-  #include <filesystem>
-#endif
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -29,6 +21,7 @@
 #include "readMtxToCSR.hpp" //implicitly includes standalone_csr.hpp
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"
+#include "filetypes.hpp"
 #ifdef ROCPROFILE
 #include </opt/rocm/rocprofiler/include/rocprofiler.h>
 #endif
@@ -41,36 +34,6 @@
  #endif
 #endif
 
-
-typedef enum {
-  mtx,
-  csr,
-  other = -1
-} graphFileType; 
-void setUpFiles(char * inFile, char * outFile, std::ifstream & retIFS, std::ofstream & retOFS, graphFileType & inType, graphFileType & outType) {
-  std::filesystem::path inPath(inFile);
-  std::filesystem::path outPath(outFile);
-  if (inPath.extension() == ".mtx") {
-    inType = mtx;
-    retIFS = std::ifstream(inPath, std::ios_base::in);
-  } else if (inPath.extension() == ".csr") {
-    inType = csr;
-    retIFS = std::ifstream(inPath, std::ios_base::in | std::ios_base::binary);
-  } else {
-    std::cerr << "Input File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
-    exit(1);
-  }
-  if (outPath.extension() == ".mtx") {
-    outType = mtx;
-    retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc);
-  } else if (outPath.extension() == ".csr") {
-    outType = csr;
-    retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
-  } else {
-    std::cerr << "Output File " << inPath << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
-    exit(2);
-  }
-}
 
 int main(int argc, char * argv[]) {
 
