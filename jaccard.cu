@@ -27,6 +27,7 @@
 #include "graph.hpp"
 #include "utilities/graph_utils.cuh"
 #else
+#include <iostream>
 #include "standalone_algorithms.hpp"
 #include "standalone_csr.hpp"
 //From RAFT at commit 048063dc08
@@ -98,6 +99,8 @@ void fill(size_t n, T *x, T value)
   size_t grid = min((n/block)+((n%block)?1:0), (size_t)CUDA_MAX_BLOCKS); 
   //TODO, do we need to emulate their stream behavior?
   fill_kernel<<<grid, block>>>(x, value, n);
+  cudaError_t error = cudaGetLastError();
+  if (error != cudaSuccess) std::cerr << "Error in fill_kernel " << error << std::endl;
 }
 //Directly from the older CUDA C Programming Guide
 #if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
@@ -319,9 +322,11 @@ int jaccard(vertex_t n,
   nblocks.z  = 1;
 
   // launch kernel
+  cudaError_t error = cudaSuccess;
   jaccard_row_sum<weighted, vertex_t, edge_t, weight_t>
     <<<nblocks, nthreads>>>(n, csrPtr, csrInd, weight_in, work);
-  cudaDeviceSynchronize();
+  error = cudaDeviceSynchronize();
+  if (error != cudaSuccess) std::cerr << "Error in jaccard_row_sum " << error << std::endl;
   fill(e, weight_i, weight_t{0.0});
 
   // setup launch configuration
@@ -335,6 +340,8 @@ int jaccard(vertex_t n,
   // launch kernel
   jaccard_is<weighted, vertex_t, edge_t, weight_t>
     <<<nblocks, nthreads>>>(n, csrPtr, csrInd, weight_in, work, weight_i, weight_s);
+  error = cudaDeviceSynchronize(); //Added, not necessary
+  if (error != cudaSuccess) std::cerr << "Error in jaccard_is " << error << std::endl;
 
   // setup launch configuration
   nthreads.x = min(e, edge_t{CUDA_MAX_KERNEL_THREADS});
@@ -347,6 +354,8 @@ int jaccard(vertex_t n,
   // launch kernel
   jaccard_jw<weighted, vertex_t, edge_t, weight_t>
     <<<nblocks, nthreads>>>(e, weight_i, weight_s, weight_j);
+  error = cudaDeviceSynchronize(); //Added, not necessary
+  if (error != cudaSuccess) std::cerr << "Error in jaccard_jw " << error << std::endl;
 
   return 0;
 }
@@ -442,6 +451,9 @@ void jaccard(GraphCSRView<VT, ET, WT> const &graph, WT const *weights, WT *resul
                                                weight_s,
                                                result);
   }
+  cudaFree(weight_i);
+  cudaFree(weight_s);
+  cudaFree(work);
 }
 
 template <typename VT, typename ET, typename WT>
@@ -485,6 +497,9 @@ void jaccard_list(GraphCSRView<VT, ET, WT> const &graph,
                                                      weight_s,
                                                      result);
   }
+  cudaFree(weight_i);
+  cudaFree(weight_s);
+  cudaFree(work);
 }
 
 template void jaccard<int32_t, int32_t, float>(GraphCSRView<int32_t, int32_t, float> const &,
