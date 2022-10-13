@@ -20,11 +20,11 @@
 #include <cmath>
 #include "readMtxToCSR.hpp"
 
-std::set<std::tuple<int32_t, int32_t, double>> * readCoordFile(std::ifstream &fileIn) {
-  std::set<std::tuple<int32_t, int32_t, double>> * ret_set = new std::set<std::tuple<int32_t, int32_t, double>>();
+std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * readCoordFile(std::ifstream &fileIn) {
+  std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>();
   //Keep reading data lines to EOF
   do {
-    std::tuple<int32_t, int32_t, double> line = readCoord<double>(fileIn, true);
+    std::tuple<int32_t, int32_t, WEIGHT_TYPE> line = readCoord<int32_t, int32_t, WEIGHT_TYPE>(fileIn, true);
     if (!(fileIn.bad() || fileIn.fail() || fileIn.eof())) {
       ret_set->insert(line);
     } 
