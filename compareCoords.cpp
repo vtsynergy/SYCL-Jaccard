@@ -17,6 +17,7 @@
 #include <iostream>
 #include <set>
 #include <tuple>
+#include <cmath>
 #include "readMtxToCSR.hpp"
 
 std::set<std::tuple<int32_t, int32_t, double>> * readCoordFile(std::ifstream &fileIn) {
@@ -58,8 +59,8 @@ int main(int argc, char * argv[]) {
     //If the coordinates match, then test for equality
     if ((std::get<0>(*goldItr) == std::get<0>(*testItr)) && (std::get<1>(*goldItr) == std::get<1>(*testItr))) {
       //Check difference;
-      if (abs(std::get<2>(*goldItr) - std::get<2>(*testItr)) > tol) {
-        std::cerr << "Warning: elements at (" << std::get<0>(*goldItr) << "," << std::get<1>(*goldItr) << ") differ by more than tolerance! Gold: " << std::get<2>(*goldItr) << " vs. Test: " << std::get<2>(*testItr) << std::endl;
+      if (fabs(std::get<2>(*goldItr) - std::get<2>(*testItr)) > tol) {
+        std::cerr << "Warning: elements at (" << std::get<0>(*goldItr) << "," << std::get<1>(*goldItr) << ") differ by more than " << tol << " tolerance! Gold: " << std::get<2>(*goldItr) << " vs. Test: " << std::get<2>(*testItr) << std::endl;
         ++warnCount;
       }
       ++goldItr;
