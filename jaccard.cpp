@@ -49,8 +49,8 @@ __inline__ value_t parallel_prefix_sum(cl::sycl::nd_item<2> const &tid_info, cou
   bool valid;
 
   // Parallel prefix sum (using __shfl)
-  mn = (((n + tid_info.get_local_range(0)- 1) / tid_info.get_local_range(0)) * tid_info.get_local_range(0));  // n in multiple of blockDim.x
-  for (i = tid_info.get_local_id(0); i < mn; i += tid_info.get_local_range(0)) {
+  mn = (((n + tid_info.get_local_range(1)- 1) / tid_info.get_local_range(1)) * tid_info.get_local_range(1));  // n in multiple of blockDim.x
+  for (i = tid_info.get_local_id(1); i < mn; i += tid_info.get_local_range(1)) {
     // All threads (especially the last one) must always participate
     // in the shfl instruction, otherwise their sum will be undefined.
     // So, the loop stopping condition is based on multiple of n in loop increments,
@@ -73,7 +73,7 @@ group_barrier(tid_info.get_group());
     shfl_temp[tid_info.get_local_linear_id()] = sum;
     //FIXME make sure everybody has read from the top thread in the same Y-dimensional subgroup
 group_barrier(tid_info.get_group());
-    last = shfl_temp[tid_info.get_local_range(0) - 1 + (tid_info.get_local_range(0) * tid_info.get_local_id(1))];
+    last = shfl_temp[tid_info.get_local_range(1) - 1 + (tid_info.get_local_range(1) * tid_info.get_local_id(0))];
     //Move forward
     //last = __shfl_sync(warp_full_mask(), sum, blockDim.x - 1, blockDim.x);
 
@@ -81,21 +81,21 @@ group_barrier(tid_info.get_group());
     sum = (valid) ? w[ind[ind_off+i]] : 0.0;
 
     // do prefix sum (of size warpSize=blockDim.x =< 32)
-    for (j = 1; j < tid_info.get_local_range(0); j *= 2) {
+    for (j = 1; j < tid_info.get_local_range(1); j *= 2) {
       //FIXME: __shfl_up_warp
       //FIXME make sure everybody is here
       //Write your current sum
 group_barrier(tid_info.get_group());
-      shfl_temp[tid_info.get_local_id(0)] = sum;
+      shfl_temp[tid_info.get_local_linear_id()] = sum;
       //FIXME Force writes to finish
       //read from tid-j
       //Using the x-dimension local id for the conditional protects from overflows to other Y-subgroups
       //Using the local_linear_id for the read saves us having to offset by x_range * y_id
 group_barrier(tid_info.get_group());
-      if (tid_info.get_local_id(0) >= j) v = shfl_temp[tid_info.get_local_linear_id()-j];
+      if (tid_info.get_local_id(1) >= j) v = shfl_temp[tid_info.get_local_linear_id()-j];
       //FIXME Force reads to finish
       //v = __shfl_up_sync(warp_full_mask(), sum, j, blockDim.x);
-      if (tid_info.get_local_id(0) >= j) sum += v;
+      if (tid_info.get_local_id(1) >= j) sum += v;
     }
     // shift by last
     sum += last;
@@ -110,7 +110,7 @@ group_barrier(tid_info.get_group());
   shfl_temp[tid_info.get_local_linear_id()] = sum;
   //FIXME make sure everybody has read from the top thread in the same Y-dimensional group
 group_barrier(tid_info.get_group());
-  last = shfl_temp[tid_info.get_local_range(0) - 1 + (tid_info.get_local_range(0) * tid_info.get_local_id(1))];
+  last = shfl_temp[tid_info.get_local_range(1) - 1 + (tid_info.get_local_range(1) * tid_info.get_local_id(0))];
   //Move forward
   //last = __shfl_sync(warp_full_mask(), sum, blockDim.x - 1, blockDim.x);
 
@@ -134,10 +134,10 @@ public:
 //Custom Thrust simplifications
   const void operator()(cl::sycl::nd_item<1> tid_info) const {
     //equivalent to: idx = threadIdx.x + blockIdx.x*blockIdx.x;
-    cl::sycl::id<1> idx = tid_info.get_global_linear_id();
+    size_t idx = tid_info.get_global_id(0);
     //equivalent to: incr = blockDim.x*gridDim.x;
-    cl::sycl::range<1> incr = tid_info.get_global_range();
-    for (; idx[0] < n; idx[0] += incr[0]) {
+    size_t incr = tid_info.get_global_range(0);
+    for (; idx < n; idx += incr) {
       ptr[idx] = value;
     }
   }
@@ -244,8 +244,8 @@ public:
     edge_t start, end, length;
     weight_t sum;
   
-    vertex_t row_start = tid_info.get_global_id(1);
-    vertex_t row_incr = tid_info.get_global_range(1);
+    vertex_t row_start = tid_info.get_global_id(0);
+    vertex_t row_incr = tid_info.get_global_range(0);
     for (row = row_start; row < n; row += row_incr) {
       start  = csrPtr[row];
       end    = csrPtr[row + 1];
@@ -255,7 +255,7 @@ public:
       //Must be if constexpr so it doesn't try to evaluate v when it's a nullptr_t
       if constexpr (weighted) {
         sum = parallel_prefix_sum(tid_info, length, csrInd, start, v, shfl_temp);
-        if (tid_info.get_local_id(0) == 0) work[row] = sum;
+        if (tid_info.get_local_id(1) == 0) work[row] = sum;
       } else {
         work[row] = static_cast<weight_t>(length);
       }
@@ -302,12 +302,12 @@ public:
     vertex_t ref, cur, ref_col, cur_col, match;
     weight_t ref_val;
 
-    vertex_t row_start = tid_info.get_global_id(2);
-    vertex_t row_incr = tid_info.get_global_range(2);
+    vertex_t row_start = tid_info.get_global_id(0);
+    vertex_t row_incr = tid_info.get_global_range(0);
     edge_t j_off = tid_info.get_global_id(1);
     edge_t j_incr = tid_info.get_global_range(1);
-    edge_t i_off = tid_info.get_global_id(0);
-    edge_t i_incr = tid_info.get_global_range(0);
+    edge_t i_off = tid_info.get_global_id(2);
+    edge_t i_incr = tid_info.get_global_range(2);
     for (row = row_start; row < n; row += row_incr) {
       for (j = csrPtr[row] + j_off; j < csrPtr[row + 1];
            j += j_incr) {
@@ -413,8 +413,8 @@ public:
     vertex_t row, col, ref, cur, ref_col, cur_col;
     weight_t ref_val;
 
-    for (idx = tid_info.get_global_id(2); idx < num_pairs;
-         idx += tid_info.get_global_range(2)) {
+    for (idx = tid_info.get_global_id(0); idx < num_pairs;
+         idx += tid_info.get_global_range(0)) {
       row = first_pair[idx];
       col = second_pair[idx];
 
@@ -429,8 +429,8 @@ public:
 
       // compute new intersection weights
       // search for the element with the same column index in the reference row
-      for (i = csrPtr[ref] + tid_info.get_global_id(0); i < csrPtr[ref + 1];
-           i += tid_info.get_global_range(0)) {
+      for (i = csrPtr[ref] + tid_info.get_global_id(2); i < csrPtr[ref + 1];
+           i += tid_info.get_global_range(2)) {
         match   = -1;
         ref_col = csrInd[i];
         if constexpr (weighted) {
@@ -493,7 +493,7 @@ public:
     edge_t j;
     weight_t Wi, Ws, Wu;
 
-    for (j = tid_info.get_global_linear_id(); j < e; j += tid_info.get_global_range(0)) {
+    for (j = tid_info.get_global_id(0); j < e; j += tid_info.get_global_range(0)) {
       Wi          = weight_i[j];
       Ws          = weight_s[j];
       Wu          = Ws - Wi;
@@ -514,11 +514,13 @@ int jaccard(vertex_t n,
             cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
   dim3 nthreads, nblocks;
-  size_t y = 4;
+  //Needs to be 1 for barriers in warp intrinsic emulation
+  size_t y = 1;
 
   // setup launch configuration
-  cl::sycl::range<2> sum_local{32, y};
-  cl::sycl::range<2> sum_global{1 * sum_local.get(0), min((n + sum_local.get(1) -1) / sum_local.get(1), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(1)};
+  //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
+  cl::sycl::range<2> sum_local{y, 32};
+  cl::sycl::range<2> sum_global{min((n + sum_local.get(0) -1) / sum_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
@@ -540,10 +542,14 @@ int jaccard(vertex_t n,
   q.wait();
   fill(e, weight_i, weight_t{0.0}, q);
 
+  //Back to previous value since this doesn't require barriers
+  y = 4;
+
   // setup launch configuration
+  //SYCL: INVERT THE ORDER OF MULTI-DIMENSIONAL THREAD INDICES
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{32/y, y, 8};
-  cl::sycl::range<3> is_global{1 * is_local.get(0), 1 * is_local.get(1), min((n + is_local.get(2) - 1) / is_local.get(2), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(2)};
+  cl::sycl::range<3> is_local{8, y, 32/y};
+  cl::sycl::range<3> is_global{min((n + is_local.get(0) - 1) / is_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
@@ -594,11 +600,12 @@ int jaccard_pairs(vertex_t n,
                   cl::sycl::buffer<weight_t> &weight_j, cl::sycl::queue &q)
 {
   dim3 nthreads, nblocks;
-  size_t y = 4;
+  //Needs to be 1 for barriers in warp intrinsic emulation
+  size_t y = 1;
 
   // setup launch configuration
-  cl::sycl::range<2> sum_local{32, y};
-  cl::sycl::range<2> sum_global{1 * sum_local.get(0), min((n + sum_local.get(1) -1) / sum_local.get(1), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(1)};
+  cl::sycl::range<2> sum_local{y, 32};
+  cl::sycl::range<2> sum_global{min((n + sum_local.get(0) -1) / sum_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * sum_local.get(0), sum_local.get(1)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
@@ -621,10 +628,13 @@ int jaccard_pairs(vertex_t n,
   // NOTE: initilized weight_i vector with 0.0
   // fill(num_pairs, weight_i, weight_t{0.0}, q);
 
+  //Back to previous value since this doesn't require barriers
+  y = 4;
+
   // setup launch configuration
   //FIXME: De-CUDA the MAX_KERNEL_THREADS and MAX_BLOCKS defines
-  cl::sycl::range<3> is_local{32, 1, 8};
-  cl::sycl::range<3> is_global{1 * is_local.get(0), 1 * is_local.get(1), min((n + is_local.get(2) - 1) / is_local.get(2), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(2)};
+  cl::sycl::range<3> is_local{8, y, 32/y};
+  cl::sycl::range<3> is_global{min((n + is_local.get(0) - 1) / is_local.get(0), vertex_t{CUDA_MAX_BLOCKS}) * is_local.get(0), 1 * is_local.get(1), 1 * is_local.get(2)};
 
   // launch kernel
   q.submit([&](cl::sycl::handler &cgh) {
