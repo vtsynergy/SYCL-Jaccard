@@ -200,6 +200,36 @@ std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, V
   delete tmp_vec;
   return ret_set;
 }
+template <typename ET, typename VT, typename WT>
+void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<ET, VT, WT>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected, bool keepReverseEdges) {
+    //Add the description comment
+    fileOut << "\%\%MatrixMarket matrix coordinate ";
+    if (isWeighted) {
+      if constexpr (std::is_same<WT, double>::value) {
+        fileOut << "double ";
+      } else {
+        fileOut << "real ";
+      }
+    } else {
+      fileOut << "pattern ";
+    }
+    if (isDirected || keepReverseEdges) {
+      fileOut << "general" << std::endl;
+    } else {
+      fileOut << "symmetric" << std::endl;
+    }
+    //Start constructing the vert/edge header line
+    fileOut << numVerts << " " << numVerts << " ";
+    //Remove reverse edges if necessary and iAdd the vert/edge header line
+    if (!isDirected && !keepReverseEdges) {
+      removeReverseEdges(mtx);
+    }
+    fileOut << mtx.size() << std::endl;
+    for (std::tuple<VT, ET, WEIGHT_TYPE> edge : mtx) {
+      //std::cout << "Source, Destination, JS-Score: " << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+      fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
+    }
+}
 
 template <typename ET, typename VT, typename WT>
 void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool keepReverseEdges) {
@@ -312,4 +342,5 @@ template std::tuple<int32_t, int32_t, WEIGHT_TYPE> readCoord(std::ifstream &file
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *fileToMTXSet(std::ifstream &fileIn, bool * hasWeights, bool * isDirected);
 template GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> mtx, bool ignoreSelf, bool isZeroIndexed);
 template std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> *CSRToMtx(GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed);
+template void mtxSetToFile(std::ofstream &fileOut, std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> &mtx, int64_t numVerts, int64_t numEdges, bool isWeighted, bool isDirected, bool keepReverseEdges);
 template void CSRToFile<int32_t, int32_t, WEIGHT_TYPE>(std::ofstream &fileOut, GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> &csr, bool isZeroIndexed, bool isWeighted, bool isDirected, bool keepReverseEdges);

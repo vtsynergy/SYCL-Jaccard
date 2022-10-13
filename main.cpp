@@ -244,12 +244,8 @@ int main(int argc, char * argv[]) {
         csrDumpFile.close();
       }
       //convert back to MTX (implicit copyback if not done explicitly)
-      //FIXME Add the description comment and vert/edge header lines to make it actually MTX
-      std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = CSRToMtx<WEIGHT_TYPE>(gpu_graph_results, true);
-      for (std::tuple<int32_t, int32_t, WEIGHT_TYPE> edge : *gpu_results_mtx) {
-        //std::cout << "Source, Destination, JS-Score: " << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
-        fileOut << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
-      }
+      std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>> * gpu_results_mtx = CSRToMtx<int32_t, int32_t, WEIGHT_TYPE>(gpu_graph_results, true);
+      mtxSetToFile(fileOut, *gpu_results_mtx, gpu_graph_results.number_of_vertices, gpu_graph_results.number_of_edges, isWeighted, isDirected, keepReverseEdges);
     } else if (outType == csr) { // IF extension is csr, use binary r/w
       CSRToFile(fileOut, gpu_graph_results, false, isWeighted, keepReverseEdges);
     } //No else, but extensible if we need different outputs eventually
