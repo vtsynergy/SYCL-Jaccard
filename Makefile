@@ -78,7 +78,7 @@ ifeq ($(COMPILER), ICX) #DPCPP in the HPC toolkit
 endif
 
 .PHONY: all
-all: jaccardSYCL compareCoords fileConvert
+all: jaccardSYCL compareCoords fileConvert readCSRHeader
 
 compareCoords: compareCoords.o readMtxToCSR.o
 	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
@@ -88,6 +88,9 @@ fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
 
 jaccardSYCL: jaccardSYCL.o readMtxToCSR.o main.o filetypes.o
 	$(SYCL) -o jaccardSYCL jaccardSYCL.o readMtxToCSR.o main.o filetypes.o $(JACCARD_REUSE) $(SYCL_LD_FLAGS)
+
+readCSRHeader: readCSRHeader.o readMtxToCSR.o
+	g++ -o readCSRHeader readCSRHeader.o readMtxToCSR.o $(LDFLAGS)
 
 compareCoords.o: compareCoords.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) -o compareCoords.o -c compareCoords.cpp $(SYCL_C_FLAGS)
@@ -104,9 +107,12 @@ jaccardSYCL.o: jaccard.cpp standalone_csr.hpp
 main.o: main.cpp
 	$(SYCL) $(SYCL_C_FLAGS) -o main.o -c main.cpp
 
+readCSRHeader.o: readCSRHeader.cpp
+	g++ -o readCSRHeader.o -c readCSRHeader.cpp $(CFLAGS)
+
 readMtxToCSR.o: readMtxToCSR.cpp readMtxToCSR.hpp standalone_csr.hpp
 	$(SYCL) $(SYCL_C_FLAGS) -o readMtxToCSR.o -c readMtxToCSR.cpp 
 
 .PHONY: clean
 clean:
-	rm jaccardSYCL compareCoords fileConvert *.o	
+	rm jaccardSYCL compareCoords fileConvert readCSRHeader *.o	
