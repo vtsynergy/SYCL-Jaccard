@@ -387,7 +387,7 @@ inline void *CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
 
 void *FileToCSR(std::ifstream &fileIn, CSRFileHeader *header) {
   // Read the header (local)
-  CSRFileHeader localHeader;
+  CSRFileHeader localHeader = (CSRFileHeader){0, 0, 0, 0};
   fileIn.read(reinterpret_cast<char *>(&localHeader), sizeof(CSRFileHeader));
   // If header pointer is non-null, set it
   if (header != nullptr) *header = localHeader;
