@@ -34,7 +34,8 @@ int main(int argc, char *argv[]) {
   std::ifstream fileIn;
   std::ofstream fileOut;
   graphFileType inType, outType, working;
-  setUpFiles(argv[1], argv[2], fileIn, fileOut, inType, outType);
+  setupInFile(argv[1], fileIn, inType);
+  setupOutFile(argv[2], fileOut, outType);
   bool keepReverseEdges = static_cast<bool>(atoi(argv[3]));
   bool isWeighted = false, isDirected = false, hasReverseEdges = false, isZeroIndexed = false,
        dropWeights = false;

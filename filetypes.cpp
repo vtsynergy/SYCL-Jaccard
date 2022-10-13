@@ -24,10 +24,8 @@ namespace filesystem = experimental::filesystem;
 #endif
 #include "filetypes.hpp"
 
-void setUpFiles(char *inFile, char *outFile, std::ifstream &retIFS, std::ofstream &retOFS,
-                graphFileType &inType, graphFileType &outType) {
+void setupInFile(char *inFile, std::ifstream &retIFS, graphFileType &inType) {
   std::filesystem::path inPath(inFile);
-  std::filesystem::path outPath(outFile);
   if (inPath.extension() == ".mtx") {
     inType = mtx;
     retIFS = std::ifstream(inPath, std::ios_base::in);
@@ -39,6 +37,10 @@ void setUpFiles(char *inFile, char *outFile, std::ifstream &retIFS, std::ofstrea
               << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
     exit(1);
   }
+}
+
+void setupOutFile(char *outFile, std::ofstream &retOFS, graphFileType &outType) {
+  std::filesystem::path outPath(outFile);
   if (outPath.extension() == ".mtx") {
     outType = mtx;
     retOFS = std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc);
@@ -47,7 +49,7 @@ void setUpFiles(char *inFile, char *outFile, std::ifstream &retIFS, std::ofstrea
     retOFS =
         std::ofstream(outPath, std::ios_base::out | std::ios_base::trunc | std::ios_base::binary);
   } else {
-    std::cerr << "Output File " << inPath
+    std::cerr << "Output File " << outPath
               << "has illegal extension, must be \".mtx\" (text) or \".csr\" (binary)" << std::endl;
     exit(2);
   }
