@@ -20,9 +20,9 @@
 #include "readMtxToCSR.hpp"
 
 //FIXME Producing a weight vector that we're not going to use inflates memory O(edges) unnecessarily
-template <typename WT>
-std::tuple<int32_t, int32_t, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
-  std::tuple<int32_t, int32_t, WT> line;
+template <typename ET, typename VT, typename WT>
+std::tuple<ET, VT, WT> readCoord(std::ifstream &fileIn, bool isWeighted) {
+  std::tuple<ET, VT, WT> line;
   if (isWeighted) {
     fileIn >> std::get<0>(line) >> std::get<1>(line) >> std::get<2>(line);
   } else {
@@ -32,10 +32,10 @@ std::tuple<int32_t, int32_t, WT> readCoord(std::ifstream &fileIn, bool isWeighte
   return line;
 }
 //This assumes we've already read the header
-template <typename WT>
-std::set<std::tuple<int32_t, int32_t, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights) {
-  std::set<std::tuple<int32_t, int32_t, WT>> * ret_edges = new std::set<std::tuple<int32_t, int32_t, WT>>();
-  std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::tuple<int32_t, int32_t, WT>>();
+template <typename ET, typename VT, typename WT>
+std::set<std::tuple<ET, VT, WT>>* fileToMTXSet(std::ifstream &fileIn, bool * hasWeights) {
+  std::set<std::tuple<ET, VT, WT>> * ret_edges = new std::set<std::tuple<ET, VT, WT>>();
+  std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   //TODO This should really do all the header parsing here, rather than relying on the caller to do it
   *hasWeights = false;
   bool isDirected = false;
@@ -74,14 +74,14 @@ std::set<std::tuple<int32_t, int32_t, WT>>* fileToMTXSet(std::ifstream &fileIn, 
   //Discard the rest of the header
   while(fileIn.peek() == '%') fileIn.ignore(2048, '\n');
   //Read the parameters line
-  int32_t rows, columns, nnz;
+  int64_t rows, columns, nnz;
   fileIn >> rows >> columns >> nnz;
   //std::cout << "read parameters: " << rows << " " << columns << " " << nnz << std::endl;
 
 
   //Keep reading data lines to EOF
   do {
-    std::tuple<int32_t, int32_t, WT> line = readCoord<WT>(fileIn, *hasWeights);
+    std::tuple<ET, VT, WT> line = readCoord<ET, VT, WT>(fileIn, *hasWeights);
     if (!(fileIn.bad() || fileIn.fail() || fileIn.eof())) {
 #ifdef DEBUG_2
       std::cout << "Read Line: " << std::get<0>(line) << " " << std::get<1>(line) << " " << std::get<2>(line) << std::endl;
@@ -103,16 +103,16 @@ std::set<std::tuple<int32_t, int32_t, WT>>* fileToMTXSet(std::ifstream &fileIn, 
 
 
 //FIXME This may break down with directed graphs, specifically if a vertex only has inbound, but not outbound graphs, it won't get an entry in row_bounds (which should have start == end) for such a case)
-template <typename WT>
-GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WT>> mtx, bool ignoreSelf, bool isZeroIndexed) {
+template <typename ET, typename VT, typename WT>
+GraphCSRView<VT, ET, WT> * mtxSetToCSR(std::set<std::tuple<ET, VT, WT>> mtx, bool ignoreSelf, bool isZeroIndexed) {
   std::vector<WT> * weights = new std::vector<WT>();
-  std::vector<int32_t> * columns = new std::vector<int32_t>();
-  std::vector<int32_t> * row_bounds = new std::vector<int32_t>({0});
+  std::vector<VT> * columns = new std::vector<VT>();
+  std::vector<ET> * row_bounds = new std::vector<ET>({0});
   int32_t prev_src = std::get<0>(*(mtx.begin())) - (isZeroIndexed ? 0 : 1);
   //std::set should mean we're iterating over them in sorted order
-  for (std::tuple<int32_t, int32_t, WT> edge : mtx) {
-    int32_t source = std::get<0>(edge) - (isZeroIndexed ? 0 : 1);
-    int32_t destination = std::get<1>(edge) - (isZeroIndexed ? 0 : 1);
+  for (std::tuple<ET, VT, WT> edge : mtx) {
+    ET source = std::get<0>(edge) - (isZeroIndexed ? 0 : 1);
+    VT destination = std::get<1>(edge) - (isZeroIndexed ? 0 : 1);
     WT weight = std::get<2>(edge);
 #ifdef DEBUG_2
     std::cout << "CSR conversion of edge: " << source << " " << destination << " " << weight << std::endl;
@@ -147,13 +147,13 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
   std::cout << std::endl;
 #endif //DEBUG_2
   //The GraphCSRView *does not* maintain it's own copy, just pointers, so they must be dynamically allocated
-  return new GraphCSRView<int32_t, int32_t, WT>(row_bounds->data(), columns->data(), weights->data(), row_bounds->size()-1, weights->size());
+  return new GraphCSRView<VT, ET, WT>(row_bounds->data(), columns->data(), weights->data(), row_bounds->size()-1, weights->size());
 }
 
-template <typename WT>
-std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> &csr, bool isZeroIndexed) {
-std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WT>>();
-std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::tuple<int32_t, int32_t, WT>>();
+template <typename ET, typename VT, typename WT>
+std::set<std::tuple<ET, VT, WT>> * CSRToMtx(GraphCSRView<VT, ET, WT> &csr, bool isZeroIndexed) {
+std::set<std::tuple<ET, VT, WT>> * ret_set = new std::set<std::tuple<ET, VT, WT>>();
+std::vector<std::tuple<ET, VT, WT>> * tmp_vec = new std::vector<std::tuple<ET, VT, WT>>();
   //TODO Is this legal to do?
   //cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
 
@@ -170,8 +170,8 @@ std::vector<std::tuple<int32_t, int32_t, WT>> * tmp_vec = new std::vector<std::t
     //cgh.single_task<class CSRToMTX_kern>([=]
     //Just iterate over all the rows
     for (int row = 0; row < csr.number_of_vertices; row++) {
-      for (int32_t offset = offset_acc[row], end = offset_acc[row+1]; offset < end; offset++) {
-        tmp_vec->push_back(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
+      for (ET offset = offset_acc[row], end = offset_acc[row+1]; offset < end; offset++) {
+        tmp_vec->push_back(std::tuple<ET, VT, WT>(row + (isZeroIndexed ? 0 : 1), indices_acc[offset] + (isZeroIndexed ? 0 : 1), edge_acc[offset]));
       }
     }
   //});
@@ -195,7 +195,7 @@ void CSRToFile(std::ofstream &fileOut, GraphCSRView<VT, ET, WT> &csr, bool isZer
   }
 }
 
-template<typename VT, typename ET, typename WT>
+template<typename ET, typename VT, typename WT>
 inline GraphCSRView<VT, ET, WT> * CSRFileReader(std::ifstream &fileIn, CSRFileHeader header) {
   //Read Vertex Offsets
   std::vector<ET> * offsets = new std::vector<ET>(header.numVerts+1);

@@ -81,7 +81,7 @@ int main(int argc, char * argv[]) {
   bool isWeighted;
   GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> * graph;
   if (inType == mtx) { // IF extension is mtx, use the string r/w
-    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<WEIGHT_TYPE>(fileIn, &isWeighted);
+    std::set<std::tuple<int32_t, int32_t, WEIGHT_TYPE>>* mtx_graph = fileToMTXSet<int32_t, int32_t, WEIGHT_TYPE>(fileIn, &isWeighted);
     //Convert it to a CSR
     //FIXME this should read directly to buffers with writeback pointers
     graph = mtxSetToCSR(*mtx_graph);
