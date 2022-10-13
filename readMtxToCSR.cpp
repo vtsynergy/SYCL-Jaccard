@@ -106,9 +106,9 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
     int32_t source = std::get<0>(edge) - (isZeroIndexed ? 0 : 1);
     int32_t destination = std::get<1>(edge) - (isZeroIndexed ? 0 : 1);
     WT weight = std::get<2>(edge);
-    if (source != prev_src) {
+    while (source != prev_src) { // Needs to be a loop to skip empty rows and dropped self-only verts
       row_bounds->push_back(weights->size()); //Close the previous row's bounds
-      prev_src = source;
+      ++prev_src;// = source;
     }
     if (source != destination || !ignoreSelf) { // Don't add a self reference
       weights->push_back(weight);
@@ -126,7 +126,7 @@ std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<i
   //Just iterate over all the rows
   for (int row = 0; row < csr.number_of_vertices; row++) {
     for (int32_t offset = csr.offsets[row], end = csr.offsets[row+1]; offset < end; offset++) {
-      ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 0), csr.indices[offset] + (isZeroIndexed ? 0 : 0), csr.edge_data[offset]));
+      ret_set->insert(std::tuple<int32_t, int32_t, WT>(row + (isZeroIndexed ? 0 : 1), csr.indices[offset] + (isZeroIndexed ? 0 : 1), csr.edge_data[offset]));
     }
   }
   return ret_set;

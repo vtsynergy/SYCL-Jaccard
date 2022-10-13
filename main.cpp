@@ -70,7 +70,7 @@ int main(int argc, char * argv[]) {
   //Compare results
 
   //Print formatted output data (i.e convert back to MTX)
-  std::set<std::tuple<int32_t, int32_t, WT>> * gpu_results_mtx = CSRToMtx<WT>(gpu_graph_results);
+  std::set<std::tuple<int32_t, int32_t, WT>> * gpu_results_mtx = CSRToMtx<WT>(gpu_graph_results, true);
   for (std::tuple<int32_t, int32_t, WT> edge : *gpu_results_mtx) {
     std::cout << std::get<0>(edge) << " " << std::get<1>(edge) << " " << std::get<2>(edge) << std::endl;
   } 
