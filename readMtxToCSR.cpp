@@ -121,7 +121,7 @@ GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, in
 }
 
 template <typename WT>
-std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> csr, bool isZeroIndexed) {
+std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> &csr, bool isZeroIndexed) {
 std::set<std::tuple<int32_t, int32_t, WT>> * ret_set = new std::set<std::tuple<int32_t, int32_t, WT>>();
   //TODO Is this legal to do?
   cl::sycl::buffer<std::set<std::tuple<int32_t, int32_t, WT>>>(ret_set, csr.number_of_edges) ;
@@ -152,7 +152,7 @@ template std::set<std::tuple<int32_t, int32_t, double>> *readMtx(std::ifstream &
 template std::set<std::tuple<int32_t, int32_t, float>> *readMtx(std::ifstream &fileIn, bool * hasWeights);
 template GraphCSRView<int32_t, int32_t, double> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, double>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
 template GraphCSRView<int32_t, int32_t, float> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, float>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
-template std::set<std::tuple<int32_t, int32_t, double>> *CSRToMtx(GraphCSRView<int32_t, int32_t, double> csr, bool isZeroIndexed = false);
-template std::set<std::tuple<int32_t, int32_t, float>> *CSRToMtx(GraphCSRView<int32_t, int32_t, float> csr, bool isZeroIndexed = false);
+template std::set<std::tuple<int32_t, int32_t, double>> *CSRToMtx(GraphCSRView<int32_t, int32_t, double> &csr, bool isZeroIndexed = false);
+template std::set<std::tuple<int32_t, int32_t, float>> *CSRToMtx(GraphCSRView<int32_t, int32_t, float> &csr, bool isZeroIndexed = false);
 template std::tuple<int32_t, int32_t, double> readCoord(std::ifstream &fileIn, bool isWeighted = true);
 template std::tuple<int32_t, int32_t, float> readCoord(std::ifstream &fileIn, bool isWeighted = true);

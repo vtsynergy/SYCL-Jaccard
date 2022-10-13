@@ -26,5 +26,5 @@ std::set<std::tuple<int32_t, int32_t, WT>>* readMtx(std::ifstream &fileIn, bool 
 template <typename WT>
 GraphCSRView<int32_t, int32_t, WT> * mtxSetToCSR(std::set<std::tuple<int32_t, int32_t, WT>> mtx, bool ignoreSelf = true, bool isZeroIndexed = false);
 template <typename WT>
-std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> csr, bool isZeroIndexed = false);
+std::set<std::tuple<int32_t, int32_t, WT>> * CSRToMtx(GraphCSRView<int32_t, int32_t, WT> &csr, bool isZeroIndexed = false);
 

@@ -43,6 +43,7 @@ class GraphCSRView {
 
   cl::sycl::buffer<weight_t> edge_data;  ///< edge weight
 
+
   vertex_t number_of_vertices;
   edge_t number_of_edges;
   cl::sycl::buffer<edge_t> offsets{nullptr};    ///< CSR offsets
@@ -87,7 +88,7 @@ class GraphCSRView {
                                 weight_t *edge_data,
                                 vertex_t number_of_vertices,
                                 edge_t number_of_edges)
-    : offsets{offsets, number_of_vertices},
+    : offsets{offsets, number_of_vertices+1},
       indices{indices, number_of_edges},
       edge_data(edge_data, number_of_edges),
       number_of_vertices(number_of_vertices),
@@ -98,9 +99,9 @@ class GraphCSRView {
   /**
   * @brief Use copy constructors to re-reference existing SYCL buffers
   */
-  GraphCSRView(cl::sycl::buffer<edge_t> &offsets,
-                                cl::sycl::buffer<vertex_t> &indices,
-                                cl::sycl::buffer<weight_t> &edge_data,
+  GraphCSRView(cl::sycl::buffer<edge_t> offsets,
+                                cl::sycl::buffer<vertex_t> indices,
+                                cl::sycl::buffer<weight_t> edge_data,
                                 vertex_t number_of_vertices,
                                 edge_t number_of_edges)
     : offsets{offsets},
