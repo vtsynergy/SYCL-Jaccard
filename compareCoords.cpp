@@ -1,4 +1,4 @@
- /*
+/*
  * Copyright (c) 2021-2022, Virginia Tech.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,19 +68,22 @@ void printNeighborsMTX(int32_t src, int32_t dest,
 
 void printNeighborsCSR(int32_t src, int32_t dest,
                        GraphCSRView<int32_t, int32_t, WEIGHT_TYPE> *graph) {
-
-  // print until we run out of neighbors
-  std::cerr << "Begin neighbors of " << src << std::endl;
-  for (int i = graph->offsets[src]; i < graph->offsets[src + 1]; i++) {
-    std::cerr << "(" << src << ", " << graph->indices[i] << ")" << std::endl;
+  { // Accessor scope
+    auto offsets_acc = graph->offsets.get_access<sycl::access::mode::read>();
+    auto indices_acc = graph->indices.get_access<sycl::access::mode::read>();
+    // print until we run out of neighbors
+    std::cerr << "Begin neighbors of " << src << std::endl;
+    for (int i = offsets_acc[src]; i < offsets_acc[src + 1]; i++) {
+      std::cerr << "(" << src << ", " << indices_acc[i] << ")" << std::endl;
+    }
+    std::cerr << "End neighbors of " << src << std::endl;
+    // dest could be before or after
+    std::cerr << "Begin neighbors of " << dest << std::endl;
+    for (int i = offsets_acc[dest]; i < offsets_acc[dest + 1]; i++) {
+      std::cerr << "(" << dest << ", " << indices_acc[i] << ")" << std::endl;
+    }
+    std::cerr << "End neighbors of " << dest << std::endl;
   }
-  std::cerr << "End neighbors of " << src << std::endl;
-  // dest could be before or after
-  std::cerr << "Begin neighbors of " << dest << std::endl;
-  for (int i = graph->offsets[dest]; i < graph->offsets[dest + 1]; i++) {
-    std::cerr << "(" << dest << ", " << graph->indices[i] << ")" << std::endl;
-  }
-  std::cerr << "End neighbors of " << dest << std::endl;
 }
 
 void readInputFiles(char *goldFile, char *testFile, graphFileType &type,
@@ -150,9 +153,6 @@ void readInputFiles(char *goldFile, char *testFile, graphFileType &type,
         exit(3);
       }
       *testSet = CSRToMtx(**testCSR, testHeader.flags.isZeroIndexed, true);
-      delete (*testCSR)->offsets;
-      delete (*testCSR)->indices;
-      delete (*testCSR)->edge_data;
       delete *testCSR;
 
     } else if (testType == mtx) {
@@ -202,60 +202,62 @@ int main(int argc, char *argv[]) {
                 << " vs. Test: " << testCSR->number_of_edges << std::endl;
     }
 
-    // Instead of iterators, we need a vertex and edge index for each CSR
-    int32_t goldSrc = 0, goldDest = 0, testSrc = 0, testDest = 0;
-    while ((goldSrc < goldCSR->number_of_vertices && goldDest < goldCSR->number_of_edges) &&
-           (testSrc < testCSR->number_of_vertices && testDest < testCSR->number_of_edges)) {
-      // If the coordinates match, then test for equality
-      if ((goldSrc == testSrc) && (goldCSR->indices[goldDest] == testCSR->indices[testDest])) {
-        // Check difference;
-        if (fabs(goldCSR->edge_data[goldDest] - testCSR->edge_data[testDest]) > tol) {
-          std::cerr << "Warning: zero-indexed elements at (" << goldSrc << ","
-                    << goldCSR->indices[goldDest] << ") differ by more than " << tol
-                    << " tolerance! Gold: " << goldCSR->edge_data[goldDest]
-                    << " vs. Test: " << testCSR->edge_data[testDest] << std::endl;
-          ++warnCount;
-          printNeighborsCSR(goldSrc, goldCSR->indices[goldDest], goldCSR);
-        }
-        ++goldDest;
-        ++testDest;
-      } else { // Coordinate mismatch, shouldn't happen
-        if (goldCSR->indices[goldDest] < testCSR->indices[testDest]) {
-          std::cerr << "Element missing from test file: " << goldSrc << " "
-                    << goldCSR->indices[goldDest] << " " << goldCSR->edge_data[goldDest]
-                    << std::endl;
-          ++warnCount;
+    { // Accessor scope
+      auto gold_offsets = goldCSR->offsets.get_access<sycl::access::mode::read>();
+      auto gold_indices = goldCSR->indices.get_access<sycl::access::mode::read>();
+      auto gold_weights = goldCSR->edge_data.get_access<sycl::access::mode::read>();
+      auto test_offsets = testCSR->offsets.get_access<sycl::access::mode::read>();
+      auto test_indices = testCSR->indices.get_access<sycl::access::mode::read>();
+      auto test_weights = testCSR->edge_data.get_access<sycl::access::mode::read>();
+      // Instead of iterators, we need a vertex and edge index for each CSR
+      int32_t goldSrc = 0, goldDest = 0, testSrc = 0, testDest = 0;
+      while ((goldSrc < goldCSR->number_of_vertices && goldDest < goldCSR->number_of_edges) &&
+             (testSrc < testCSR->number_of_vertices && testDest < testCSR->number_of_edges)) {
+        // If the coordinates match, then test for equality
+        if ((goldSrc == testSrc) && (gold_indices[goldDest] == test_indices[testDest])) {
+          // Check difference;
+          if (fabs(gold_weights[goldDest] - test_weights[testDest]) > tol) {
+            std::cerr << "Warning: zero-indexed elements at (" << goldSrc << ","
+                      << gold_indices[goldDest] << ") differ by more than " << tol
+                      << " tolerance! Gold: " << gold_weights[goldDest]
+                      << " vs. Test: " << test_weights[testDest] << std::endl;
+            ++warnCount;
+            printNeighborsCSR(goldSrc, gold_indices[goldDest], goldCSR);
+          }
           ++goldDest;
-        } else {
-          std::cerr << "Element added to test file: " << testSrc << " "
-                    << testCSR->indices[testDest] << " " << testCSR->edge_data[testDest]
-                    << std::endl;
-          ++warnCount;
           ++testDest;
+        } else { // Coordinate mismatch, shouldn't happen
+          if (gold_indices[goldDest] < test_indices[testDest]) {
+            std::cerr << "Element missing from test file: " << goldSrc << " "
+                      << gold_indices[goldDest] << " " << gold_weights[goldDest] << std::endl;
+            ++warnCount;
+            ++goldDest;
+          } else {
+            std::cerr << "Element added to test file: " << testSrc << " " << test_indices[testDest]
+                      << " " << test_weights[testDest] << std::endl;
+            ++warnCount;
+            ++testDest;
+          }
         }
-      }
-      while (goldDest == goldCSR->offsets[goldSrc + 1]) ++goldSrc;
-      while (testDest == testCSR->offsets[testSrc + 1]) ++testSrc;
-      count++;
+        while (goldDest == gold_offsets[goldSrc + 1])
+          ++goldSrc;
+        while (testDest == test_offsets[testSrc + 1])
+          ++testSrc;
+        count++;
 
-      if ((count % onePct) == 0)
-        std::cout << "Completed " << count / onePct << "\% of scan" << std::endl;
+        if ((count % onePct) == 0)
+          std::cout << "Completed " << count / onePct << "\% of scan" << std::endl;
+      }
+      if (goldDest != goldCSR->number_of_edges) {
+        std::cerr << "Warning: " << (goldCSR->number_of_edges - goldDest)
+                  << " elements unscanned from Gold input" << std::endl;
+      }
+      if (testDest != testCSR->number_of_edges) {
+        std::cerr << "Warning: " << (testCSR->number_of_edges - testDest)
+                  << " elements unscanned from Test input" << std::endl;
+      }
     }
-    if (goldDest != goldCSR->number_of_edges) {
-      std::cerr << "Warning: " << (goldCSR->number_of_edges - goldDest)
-                << " elements unscanned from Gold input" << std::endl;
-    }
-    if (testDest != testCSR->number_of_edges) {
-      std::cerr << "Warning: " << (testCSR->number_of_edges - testDest)
-                << " elements unscanned from Test input" << std::endl;
-    }
-    delete goldCSR->offsets;
-    delete goldCSR->indices;
-    delete goldCSR->edge_data;
     delete goldCSR;
-    delete testCSR->offsets;
-    delete testCSR->indices;
-    delete testCSR->edge_data;
     delete testCSR;
   } else if (compType == mtx) {
     // If the size of sets is different, they won't necessarily align, but they're sorted so we can

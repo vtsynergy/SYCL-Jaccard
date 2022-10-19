@@ -88,8 +88,8 @@ endif
 .PHONY: all
 all: jaccardSYCL compareCoords fileConvert readCSRHeader
 
-compareCoords: compareCoords.o readMtxToCSR.o
-	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
+compareCoords: compareCoords.o readMtxToCSR.o filetypes.o
+	$(SYCL) -o compareCoords compareCoords.o readMtxToCSR.o filetypes.o $(COMPARE_REUSE) $(SYCL_LD_FLAGS)
 
 fileConvert: fileConvert.o filetypes.o readMtxToCSR.o
 	$(SYCL) -o fileConvert fileConvert.o filetypes.o readMtxToCSR.o $(SYCL_LD_FLAGS)
