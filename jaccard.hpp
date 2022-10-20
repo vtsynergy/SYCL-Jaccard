@@ -36,6 +36,16 @@
 #ifndef __JACCARD_HPP__
   #define __JACCARD_HPP__
 
+  #define VC_ROW_SUM_WG_1 1
+  #define VC_ROW_SUM_WG_0 32
+  #define VC_FILL_WG_0 CUDA_MAX_KERNEL_THREADS
+  #define VC_IS_WG_2 8
+  #define VC_IS_WG_1 4
+  #define VC_IS_WG_0 (32 / VC_IS_WG_1)
+  #define VC_JW_WG_0 CUDA_MAX_KERNEL_THREADS
+  #define EC_SCAN_WG_0 CUDA_MAX_KERNEL_THREADS
+  #define EC_IS_WG_0 CUDA_MAX_KERNEL_THREADS
+
 // Kernels are implemented as functors or lambdas in SYCL
 template <typename T>
 class FillKernel {
