@@ -4,4 +4,4 @@ In addition to a bespoke edge-centric kernel, this work leverages a hand-transla
 
 Please Cite:
  **Edge-Connected Jaccard Similarity for Graph Link Prediction on FPGA**, Paul Sathre, Atharva Gondhalekar, Wu-chun Feng, In *Proceedings of the IEEE High Performance Extreme Computing Conference (HPEC)*, Waltham, MA, September 2022. (Insert DOI once available)
-* For reproducibility, refer to the 7 revisions with the key `hpec22` in their tag. Input data can be found here: (Insert tarball link once available)
+* For reproducibility, refer to the 7 revisions with the key `hpec22` in their tag. Input data can be found here: [HPEC'22 Input CSR Data](https://chrec.cs.vt.edu/SYCL-Jaccard/HPEC22-Data/index.html)
