@@ -29,6 +29,6 @@ From cuGraph (https://github.com/rapidsai/cugraph) revision 3f13ffcdf (Feb. 17, 
     * Removed CUDA Stream functionality
 * From `cpp/src/link_predicition/jaccard.cu`
   * Largely unchanged other than the additions mentioned above
-  * Double-precision atomicAdd for compute capability < is implemented with atomicCAS according to the older versions of the CUDA C Programming Guide
+  * Double-precision atomicAdd for compute capability < 6.0 is implemented with atomicCAS according to the older versions of the CUDA C Programming Guide
   * In the `jaccard` and `jaccard_list` wrappers, the RMM templated device vectors and their allocations are replaced with raw pointers and standard `cudaMalloc` calls.
     * CUGRAPH_EXPECTS input checks are removed
